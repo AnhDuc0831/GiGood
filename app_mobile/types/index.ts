@@ -23,6 +23,12 @@ export type UserProfile = {
   phone: string
   location: string
   taskerProfile: TaskerProfile | null
+  registrationProgress?: {
+    step1_PhoneVerified: boolean
+    step2_ProfileCompleted: boolean
+    step3_SkillsVerified: boolean
+    bonusAwarded: boolean
+  }
 }
 
 export type ChatMessage = {
@@ -48,6 +54,7 @@ export type Job = {
   isCompletedReportedByTasker: boolean
   lat: number
   lng: number
+  isUrgent?: boolean
 }
 
 export type ToastState = {
@@ -71,6 +78,7 @@ export type GiGoodState = {
     chatDetailOpen: boolean
     matchingJobIdRef: number | null
     toast: ToastState
+    bonusPopupOpen: boolean
   }
   data: {
     jobs: Job[]

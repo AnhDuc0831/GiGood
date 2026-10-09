@@ -13,8 +13,10 @@ import { CartProvider } from "../../lib/features/wallet/context/CartContext";
 import { connectChatHub } from "../../lib/features/chat/hub";
 import { connectNotificationHub } from "../../lib/features/notifications/hub";
 import { formatNotificationTime } from "../../lib/features/notifications/format";
-import { formatVnd } from "../../lib/format";
+import { formatVnd, formatToken } from "../../lib/format";
 import { colors } from "../../constants/theme";
+import { useGiGood } from "../../lib/GiGoodContext";
+import { BonusPopup } from "../../components/modals/BonusPopup";
 
 export default function AppLayout() {
   const { profile, currentRole, switchRole } = useAuth();
@@ -24,6 +26,8 @@ export default function AppLayout() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [switchingRole, setSwitchingRole] = useState(false);
   const router = useRouter();
+
+  const { state, dispatch } = useGiGood();
 
   // Foreground-only realtime: connect both hubs once the session is hydrated.
   // Best effort, never blocks the shell if a hub is unreachable.
@@ -116,41 +120,22 @@ export default function AppLayout() {
           </View>
         </View>
 
-        {/* Role Switcher */}
-        <View className="mt-3">
-          <SegmentedToggle
-            options={[
-              { value: "seeker", label: "Người Thuê" },
-              { value: "tasker", label: "Người Nhận" },
-            ]}
-            selected={currentRole}
-            onSelect={(value) => void handleRoleChange(value as Role)}
-            activeColor={isSeeker ? colors.orange : colors.teal}
-          />
-        </View>
-
-        {/* Wallet + Escrow cards */}
+        {/* Wallet card */}
         <View className="flex-row gap-2 mt-3">
-          <View className="flex-1 flex-row items-center space-x-2 bg-teal-50 border border-teal-200 px-3 py-2 rounded-xl">
-            <FontAwesome name="shield" size={14} color={colors.teal} />
-            <View>
-              <Text className="text-[9px] text-gray-500 font-medium">
-                Ký quỹ an toàn
-              </Text>
-              <Text className="text-[11px] text-teal-600 font-extrabold">
-                {formatVnd(escrowHeld)}
-              </Text>
-            </View>
-          </View>
           <View className="flex-1 flex-row items-center space-x-2 bg-stone-50 border border-gray-200 px-3 py-2 rounded-xl">
             <FontAwesome name="credit-card" size={14} color={colors.grayIcon} />
-            <View>
-              <Text className="text-[9px] text-gray-500 font-medium">
-                Ví của {profile.name.split(" ").pop()}
-              </Text>
-              <Text className="text-[11px] text-gray-900 font-extrabold">
-                {formatVnd(balance)}
-              </Text>
+            <View className="flex-1 flex-row items-center justify-between">
+              <View>
+                <Text className="text-[9px] text-gray-500 font-medium">
+                  Ví của {profile.name.split(" ").pop()}
+                </Text>
+                <Text className="text-[11px] text-gray-900 font-extrabold">
+                  {formatToken(balance)}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => router.push('/(app)/topup')} className="bg-orange-500 px-3 py-1.5 rounded-lg">
+                <Text className="text-[10px] font-bold text-white">Mua Token</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </View>
@@ -241,6 +226,10 @@ export default function AppLayout() {
         <Stack.Screen name="chat/[id]" options={{ headerShown: false }} />
         <Stack.Screen name="job/[id]" options={{ headerShown: false }} />
       </Stack>
+      <BonusPopup 
+        visible={state.ui.bonusPopupOpen} 
+        onClose={() => dispatch({ type: 'HIDE_BONUS_POPUP' })} 
+      />
       </SafeAreaView>
     </CartProvider>
   );

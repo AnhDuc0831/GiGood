@@ -56,3 +56,4 @@ logs/
 Api/wwwroot/uploads/*
 !Api/wwwroot/uploads/.gitkeep
 /wwwroot/
+/Api/appsettings.json

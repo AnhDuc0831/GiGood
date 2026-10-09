@@ -33,9 +33,12 @@ public sealed record UserDto(
     string CurrentRole,
     TaskerProfileDto? TaskerProfile,
     DateTime CreatedAt,
-    bool IsAdmin);
+    bool IsAdmin,
+    RegistrationProgressDto RegistrationProgress);
 
 public sealed record TaskerProfileDto(List<string> Skills, string Bio, string Availability, string Vehicle, bool Verified);
+
+public sealed record RegistrationProgressDto(bool Step1_PhoneVerified, bool Step2_ProfileCompleted, bool Step3_SkillsVerified, bool BonusAwarded);
 
 // `wallet` stays null until task 06.
 public sealed record MeResponse(UserDto User, object? Wallet);

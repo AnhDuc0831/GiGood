@@ -27,6 +27,7 @@ export type JobModel = {
   distanceKm?: number | null
   locationText: string | null
   images: string[]
+  isUrgent: boolean
   createdAt: string
   updatedAt: string
 }
@@ -58,6 +59,7 @@ export type CreateJobBody = {
   lng?: number | null
   locationText?: string | null
   images?: string[]
+  isUrgent?: boolean
 }
 
 export type UpdateJobBody = {

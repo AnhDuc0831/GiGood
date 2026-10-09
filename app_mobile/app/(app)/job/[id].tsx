@@ -1,3 +1,4 @@
+import { VTextInput } from '../../../components/ui/VTextInput';
 import { useState } from 'react'
 import {
   ActivityIndicator,
@@ -11,6 +12,7 @@ import {
 } from 'react-native'
 import { FontAwesome } from '@expo/vector-icons'
 import { useLocalSearchParams, useRouter } from 'expo-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useJob, useJobs } from '../../../hooks/useJobs'
 import { useChat } from '../../../hooks/useChat'
@@ -36,6 +38,7 @@ export default function JobDetailScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>()
   const jobId = typeof id === 'string' && id.length > 0 ? id : undefined
   const router = useRouter()
+  const queryClient = useQueryClient()
   const { profile } = useAuth()
   const { showToast } = useUi()
   const { job, loading } = useJob(jobId)
@@ -70,8 +73,8 @@ export default function JobDetailScreen() {
   const isOwner = !!job && !!profile && job.owner.id === profile.id
   const isOpen = job?.status === 'Open'
   const heldEscrow = escrow && escrow.status === 'Held' ? escrow : null
-  const isPayer = !!heldEscrow && heldEscrow.payerId === profile?.id
-  const isPayee = !!heldEscrow && heldEscrow.payeeId === profile?.id
+  const isPayer = isOwner && job?.status === 'Assigned'
+  const isPayee = !isOwner && job?.status === 'Assigned'
   const reported = job?.isCompletedReported ?? false
 
   const startEdit = () => {
@@ -158,8 +161,9 @@ export default function JobDetailScreen() {
   const confirmAccept = async () => {
     if (!job || isAccepting) return
     try {
-      const result = await acceptJob(job.id)
-      showToast(`Đã nhận việc! ${formatVnd(result.escrow.amount)} đã được ký quỹ an toàn.`, 'success')
+      await acceptJob(job.id)
+      queryClient.invalidateQueries({ queryKey: ['wallet'] })
+      showToast('Đã nhận việc thành công!', 'success')
     } catch (error) {
       showToast(getApiErrorMessage(error, 'Không thể nhận việc.'), 'error')
     }
@@ -169,7 +173,7 @@ export default function JobDetailScreen() {
     if (!job || isAccepting) return
     Alert.alert(
       'Nhận việc',
-      `Bạn muốn nhận "${job.title}" với mức giá ${formatVnd(job.price)}? Số tiền sẽ được giữ ký quỹ đến khi hoàn thành.`,
+      `Bạn muốn nhận "${job.title}"? Phí nhận việc là ${Math.ceil(job.price / 10000)} Token sẽ bị trừ khỏi ví của bạn.`,
       [
         { text: 'Huỷ', style: 'cancel' },
         { text: 'Nhận việc', onPress: () => void confirmAccept() },
@@ -181,7 +185,7 @@ export default function JobDetailScreen() {
     if (!job || isReporting) return
     try {
       await reportJob(job.id)
-      showToast('Đã báo hoàn thành! Đang chờ khách xác nhận và giải ngân.', 'success')
+      showToast('Đã báo hoàn thành! Đang chờ khách xác nhận.', 'success')
     } catch (error) {
       showToast(getApiErrorMessage(error, 'Không thể báo hoàn thành.'), 'error')
     }
@@ -199,22 +203,22 @@ export default function JobDetailScreen() {
     if (!job || isReleasing) return
     try {
       await releaseEscrow(job.id)
-      showToast('Đã giải ngân cho người nhận việc.', 'success')
+      showToast('Đã xác nhận hoàn thành công việc.', 'success')
       // Task 07: offer the seeker a review of the tasker right after release.
       setRatingJobId(job.id)
     } catch (error) {
-      showToast(getApiErrorMessage(error, 'Không thể giải ngân.'), 'error')
+      showToast(getApiErrorMessage(error, 'Không thể xác nhận hoàn thành.'), 'error')
     }
   }
 
   const handleRelease = () => {
     if (!job || isReleasing) return
     Alert.alert(
-      'Xác nhận & Giải ngân',
-      `Giải ngân ${formatVnd(job.price)} cho người nhận việc của "${job.title}"?`,
+      'Xác nhận hoàn thành',
+      `Xác nhận công việc "${job.title}" đã hoàn thành?`,
       [
         { text: 'Huỷ', style: 'cancel' },
-        { text: 'Giải ngân', onPress: () => void confirmRelease() },
+        { text: 'Xác nhận', onPress: () => void confirmRelease() },
       ],
     )
   }
@@ -224,7 +228,7 @@ export default function JobDetailScreen() {
     try {
       const result = await cancelJob(job.id)
       showToast(
-        result ? 'Đã huỷ việc và hoàn tiền ký quỹ về ví bạn.' : 'Đã huỷ việc.',
+        'Đã huỷ việc.',
         'success',
       )
     } catch (error) {
@@ -332,7 +336,7 @@ export default function JobDetailScreen() {
           <View className="space-y-4">
             <View className="space-y-1.5">
               <Text className="text-xs font-bold text-gray-700">Tên công việc <Text className="text-red-500">*</Text></Text>
-              <TextInput value={title} onChangeText={setTitle}
+              <VTextInput value={title} onChangeText={setTitle}
                 placeholderTextColor={colors.grayMuted}
                 className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm bg-white" />
             </View>
@@ -352,7 +356,7 @@ export default function JobDetailScreen() {
 
             <View className="space-y-1.5">
               <Text className="text-xs font-bold text-gray-700">Mô tả công việc <Text className="text-red-500">*</Text></Text>
-              <TextInput value={description} onChangeText={setDescription} multiline numberOfLines={3}
+              <VTextInput value={description} onChangeText={setDescription} multiline numberOfLines={3}
                 placeholderTextColor={colors.grayMuted}
                 className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm bg-white"
                 style={{ minHeight: 80, textAlignVertical: 'top' }} />
@@ -360,14 +364,14 @@ export default function JobDetailScreen() {
 
             <View className="space-y-1.5">
               <Text className="text-xs font-bold text-gray-700">Mức giá đề xuất <Text className="text-red-500">*</Text></Text>
-              <TextInput value={price} onChangeText={setPrice} keyboardType="number-pad"
+              <VTextInput value={price} onChangeText={setPrice} keyboardType="number-pad"
                 placeholderTextColor={colors.grayMuted}
                 className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm bg-white" />
             </View>
 
             <View className="space-y-1.5">
               <Text className="text-xs font-bold text-gray-700">Địa điểm thực hiện</Text>
-              <TextInput value={location} onChangeText={setLocation}
+              <VTextInput value={location} onChangeText={setLocation}
                 placeholderTextColor={colors.grayMuted}
                 className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm bg-white" />
             </View>
@@ -391,7 +395,12 @@ export default function JobDetailScreen() {
           <View className="space-y-4">
             <View>
               <View className="flex-row items-start justify-between">
-                <Text className="text-lg font-extrabold text-gray-900 flex-1 mr-2">{job.title}</Text>
+                {job.isUrgent && (
+                    <View className="bg-red-500 rounded px-1.5 py-0.5 mr-2 self-start mt-1">
+                      <Text className="text-[10px] font-bold text-white uppercase tracking-wider">Gấp</Text>
+                    </View>
+                  )}
+                  <Text className="text-lg font-extrabold text-gray-900 flex-1 mr-2">{job.title}</Text>
                 <Text className="text-lg font-extrabold text-teal-600 flex-shrink-0">{formatVnd(job.price)}</Text>
               </View>
               <View className="flex-row items-center mt-2">

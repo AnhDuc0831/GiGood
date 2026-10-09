@@ -65,6 +65,7 @@ export function createInitialState(): GiGoodState {
       chatDetailOpen: false,
       matchingJobIdRef: null,
       toast: null,
+      bonusPopupOpen: false,
     },
     data: {
       jobs: INITIAL_JOBS,

@@ -1,5 +1,9 @@
-const vndFormatter = new Intl.NumberFormat('vi-VN')
+const numFormatter = new Intl.NumberFormat('en-US')
 
 export function formatVnd(num: number): string {
-  return `${vndFormatter.format(num)} VND`
+  return `${numFormatter.format(num)} ₫`
+}
+
+export function formatToken(num: number): string {
+  return `${numFormatter.format(num)} Token`
 }

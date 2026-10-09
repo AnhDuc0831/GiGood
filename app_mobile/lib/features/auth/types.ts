@@ -25,6 +25,12 @@ export type AuthUserDto = {
   currentRole: Role
   taskerProfile: TaskerProfileDto | null
   createdAt: string
+  registrationProgress: {
+    step1_PhoneVerified: boolean
+    step2_ProfileCompleted: boolean
+    step3_SkillsVerified: boolean
+    bonusAwarded: boolean
+  }
 }
 
 export type RegisterPayload = {
@@ -83,5 +89,6 @@ export function toUserProfile(user: AuthUserDto): UserProfile {
           verified: user.taskerProfile.verified,
         }
       : null,
+    registrationProgress: user.registrationProgress,
   }
 }

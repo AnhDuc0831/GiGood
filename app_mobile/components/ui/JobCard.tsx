@@ -29,7 +29,14 @@ export function JobCard({ job, onPress, onLongPress, selected, showActions, acti
       activeOpacity={0.7}
     >
       <View className="flex-row items-center justify-between mb-2">
-        <Text className="text-base font-bold text-gray-900 flex-1 mr-2">{job.title}</Text>
+        <View className="flex-1 flex-row flex-wrap items-center mr-2 gap-1.5">
+          {job.isUrgent && (
+            <View className="bg-red-500 rounded px-1.5 py-0.5">
+              <Text className="text-[10px] font-bold text-white uppercase tracking-wider">Gấp</Text>
+            </View>
+          )}
+          <Text className="text-base font-bold text-gray-900">{job.title}</Text>
+        </View>
         <StatusBadge status={job.status} />
       </View>
       <View className="flex-row items-center mb-1">

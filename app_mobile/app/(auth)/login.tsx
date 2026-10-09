@@ -1,3 +1,4 @@
+import { VTextInput } from '../../components/ui/VTextInput';
 import {
   View,
   Text,
@@ -75,7 +76,7 @@ export default function LoginScreen() {
               <View className="absolute left-4 top-0 bottom-0 justify-center z-10">
                 <FontAwesome name="phone" size={12} color={colors.grayMuted} />
               </View>
-              <TextInput value={phone} onChangeText={setPhone} placeholder="09xx xxx xxx" placeholderTextColor={colors.grayMuted}
+              <VTextInput value={phone} onChangeText={setPhone} placeholder="09xx xxx xxx" placeholderTextColor={colors.grayMuted}
                 className="w-full pl-10 pr-4 py-3.5 rounded-2xl border border-gray-200 text-sm" keyboardType="phone-pad" />
             </View>
           </View>
@@ -85,7 +86,7 @@ export default function LoginScreen() {
               <View className="absolute left-4 top-0 bottom-0 justify-center z-10">
                 <FontAwesome name="lock" size={12} color={colors.grayMuted} />
               </View>
-              <TextInput value={password} onChangeText={setPassword} placeholder="Nhập mật khẩu" placeholderTextColor={colors.grayMuted}
+              <VTextInput value={password} onChangeText={setPassword} placeholder="Nhập mật khẩu" placeholderTextColor={colors.grayMuted}
                 className="w-full pl-10 pr-4 py-3.5 rounded-2xl border border-gray-200 text-sm" secureTextEntry />
             </View>
           </View>

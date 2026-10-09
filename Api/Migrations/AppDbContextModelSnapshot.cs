@@ -97,8 +97,14 @@ namespace Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<bool>("ProfileCompleted")
+                        .HasColumnType("boolean");
+
                     b.Property<double>("RatingAvg")
                         .HasColumnType("double precision");
+
+                    b.Property<bool>("RegistrationBonusAwarded")
+                        .HasColumnType("boolean");
 
                     b.Property<string>("Skills")
                         .HasColumnType("jsonb");
@@ -254,6 +260,9 @@ namespace Api.Migrations
                         .HasColumnType("boolean");
 
                     b.Property<bool>("IsCompletedReported")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsUrgent")
                         .HasColumnType("boolean");
 
                     b.Property<double?>("Lat")

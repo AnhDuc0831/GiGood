@@ -31,7 +31,7 @@ export default function RoleSelectScreen() {
       <View className="flex-1 px-5 py-6 space-y-5">
         <View>
           <Text className="text-2xl font-extrabold text-gray-800">Bạn muốn dùng GiGood để làm gì?</Text>
-          <Text className="text-xs text-gray-500 mt-1">Bạn có thể đổi vai trò bất cứ lúc nào sau khi đăng ký.</Text>
+          <Text className="text-xs text-orange-500 font-bold mt-1">Đăng ký hoàn tất sẽ được tặng 20 Token. (Lưu ý: Không thể đổi vai trò sau khi chọn)</Text>
         </View>
 
         <TouchableOpacity onPress={() => selectRole('seeker')}
@@ -40,8 +40,8 @@ export default function RoleSelectScreen() {
             <FontAwesome name="user" size={18} color={colors.orange} />
           </View>
           <View className="flex-1">
-            <Text className="font-bold text-sm text-gray-800">Tôi cần thuê người làm việc</Text>
-            <Text className="text-xs text-gray-500 mt-0.5">Đăng việc vặt, tìm Tasker gần bạn và thanh toán an toàn</Text>
+            <Text className="font-bold text-sm text-gray-800">Tôi là Doanh nghiệp (Người thuê)</Text>
+            <Text className="text-xs text-gray-500 mt-0.5">Đăng việc vặt, tìm Tasker gần bạn</Text>
           </View>
           <FontAwesome name="chevron-right" size={12} color={colors.grayDisabled} style={{ marginTop: 12 }} />
         </TouchableOpacity>
@@ -52,8 +52,8 @@ export default function RoleSelectScreen() {
             <FontAwesome name="wrench" size={18} color={colors.teal} />
           </View>
           <View className="flex-1">
-            <Text className="font-bold text-sm text-gray-800">Tôi muốn nhận việc, kiếm thêm thu nhập</Text>
-            <Text className="text-xs text-gray-500 mt-0.5">Tạo hồ sơ kỹ năng, nhận việc phù hợp gần khu vực của bạn</Text>
+            <Text className="font-bold text-sm text-gray-800">Tôi là Sinh viên (Người nhận việc)</Text>
+            <Text className="text-xs text-gray-500 mt-0.5">Tạo hồ sơ, kiếm thêm thu nhập</Text>
           </View>
           <FontAwesome name="chevron-right" size={12} color={colors.grayDisabled} style={{ marginTop: 12 }} />
         </TouchableOpacity>

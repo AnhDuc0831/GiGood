@@ -23,10 +23,9 @@ import {
 } from '../lib/features/jobs/mock'
 import type {
   CreateJobBody,
-  JobEscrowResponse,
+  JobModel,
   JobListParams,
   JobListResponse,
-  JobModel,
   UpdateJobBody,
 } from '../lib/features/jobs/types'
 import type { UserProfile } from '../types'
@@ -36,7 +35,7 @@ export const jobQueryKey = (id: string) => ['job', id] as const
 
 function toViewer(profile: UserProfile | null): MockViewer {
   if (!profile) return null
-  return { id: profile.id, name: profile.name, avatarUrl: profile.avatar || null }
+  return { id: profile.id, name: profile.name, avatarUrl: profile.avatar || null, role: profile.role }
 }
 
 /** Escrow mutations touch the job lists, the detail cache, the wallet and escrows. */
@@ -92,7 +91,7 @@ export function useJobs(params?: JobListParams) {
 
   // --- task 06 escrow lifecycle ------------------------------------------------
 
-  const acceptMutation = useMutation<JobEscrowResponse, unknown, string>({
+  const acceptMutation = useMutation<JobModel, unknown, string>({
     mutationFn: (id: string) =>
       USE_MOCK ? Promise.resolve(mockAcceptJob(id, viewer)) : jobsApi.acceptJob(id),
     onSuccess: () => invalidateTransactionData(queryClient),
@@ -109,19 +108,19 @@ export function useJobs(params?: JobListParams) {
     onSuccess: () => invalidateTransactionData(queryClient),
   })
 
-  const releaseMutation = useMutation<JobEscrowResponse, unknown, string>({
+  const releaseMutation = useMutation<JobModel, unknown, string>({
     mutationFn: (id: string) =>
       USE_MOCK ? Promise.resolve(mockReleaseEscrowJob(id, viewer)) : jobsApi.releaseEscrow(id),
     onSuccess: () => invalidateTransactionData(queryClient),
   })
 
-  const cancelMutation = useMutation<JobEscrowResponse | null, unknown, string>({
+  const cancelMutation = useMutation<JobModel | null, unknown, string>({
     mutationFn: (id: string) =>
       USE_MOCK ? Promise.resolve(mockCancelJob(id, viewer)) : jobsApi.cancelJob(id),
     onSuccess: () => invalidateTransactionData(queryClient),
   })
 
-  const refundMutation = useMutation<JobEscrowResponse, unknown, string>({
+  const refundMutation = useMutation<JobModel, unknown, string>({
     mutationFn: (id: string) =>
       USE_MOCK ? Promise.resolve(mockRefundJob(id, viewer)) : jobsApi.refundJob(id),
     onSuccess: () => invalidateTransactionData(queryClient),

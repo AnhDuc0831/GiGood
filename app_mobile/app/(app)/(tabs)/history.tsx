@@ -1,3 +1,4 @@
+import { Redirect } from 'expo-router'
 import { useMemo, useState } from 'react'
 import {
   ActivityIndicator,
@@ -22,6 +23,11 @@ import { colors } from '../../../constants/theme'
 import type { JobModel } from '../../../lib/features/jobs/types'
 
 export default function HistoryScreen() {
+  const { currentRole } = useAuth()
+  if (currentRole === 'tasker') {
+    return <Redirect href="/(app)/(tabs)/board" />
+  }
+
   const { profile } = useAuth()
   const { jobs: doneJobs, loading, refreshing, refetch, releaseEscrow } = useJobs({
     mine: true,

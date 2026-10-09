@@ -1,11 +1,11 @@
 import { INITIAL_JOBS } from '../../seed'
-import { mockGetEscrow, mockHoldEscrow, mockRefundEscrow, mockReleaseEscrow, mockBalanceOf } from '../wallet/mock'
+import { mockGetEscrow, mockHoldEscrow, mockRefundEscrow, mockReleaseEscrow, mockBalanceOf, mockTopUp } from '../wallet/mock'
 import { haversineKm } from './geo'
 import type { Job } from '../../../types'
 import type {
   ApiJobStatus,
   CreateJobBody,
-  JobEscrowResponse,
+  
   JobListParams,
   JobListResponse,
   JobModel,
@@ -22,6 +22,7 @@ export type MockViewer = {
   id: string
   name: string
   avatarUrl?: string | null
+  role?: 'seeker' | 'tasker'
 } | null
 
 const STATUS_MAP: Record<Job['status'], ApiJobStatus> = {
@@ -55,15 +56,17 @@ function fromSeed(job: Job, index: number): JobModel {
     images: [],
     createdAt,
     updatedAt: createdAt,
+    isUrgent: false,
   }
 }
 
 let mockJobs: JobModel[] = INITIAL_JOBS.map(fromSeed)
+const mockJobWorkers = new Map<string, string>()
 let nextMockId = 1
 
 /** Seed jobs belong to the demo seeker: stamp the signed-in user so owner actions work. */
 function stampOwner(job: JobModel, viewer: MockViewer): JobModel {
-  if (!viewer || job.owner.id !== MOCK_OWNER_ID) return job
+  if (!viewer || viewer.role !== 'seeker' || job.owner.id !== MOCK_OWNER_ID) return job
   return {
     ...job,
     owner: {
@@ -83,11 +86,7 @@ export function mockListJobs(params: JobListParams = {}, viewer: MockViewer = nu
     jobs = viewerId
       ? jobs.filter((job) => {
           if (job.owner.id === viewerId) return true
-          const escrow = mockGetEscrow(job.id)
-          return (
-            escrow?.payeeId === viewerId &&
-            (escrow.status === 'Held' || escrow.status === 'Released')
-          )
+          return mockJobWorkers.get(job.id) === viewerId
         })
       : []
   }
@@ -135,6 +134,14 @@ export function mockGetJob(id: string, viewer: MockViewer = null): JobModel | nu
 }
 
 export function mockCreateJob(body: CreateJobBody, viewer: MockViewer = null): JobModel {
+  if (viewer) {
+    const cost = body.isUrgent ? 15 : 10;
+    const b = mockTopUp(viewer.id, 'seeker', -cost);
+    if (b.balance < 0) {
+        mockTopUp(viewer.id, 'seeker', cost);
+        throw new Error('Số dư không đủ. Vui lòng nạp thêm Token.');
+    }
+  }
   const now = new Date().toISOString()
   const owner = viewer
     ? { id: viewer.id, name: viewer.name, avatarUrl: viewer.avatarUrl ?? null, ratingAvg: 0 }
@@ -150,6 +157,7 @@ export function mockCreateJob(body: CreateJobBody, viewer: MockViewer = null): J
     isCompletedReported: false,
     lat: body.lat ?? null,
     lng: body.lng ?? null,
+    isUrgent: body.isUrgent ?? false,
     distanceKm: null,
     locationText: body.locationText ?? null,
     images: body.images ?? [],
@@ -206,7 +214,7 @@ function updateMockJob(
   return updated
 }
 
-export function mockAcceptJob(id: string, viewer: MockViewer): JobEscrowResponse {
+export function mockAcceptJob(id: string, viewer: MockViewer): JobModel {
   const me = requireViewer(viewer)
   const job = findJob(id)
   if (job.owner.id === me.id) throw new Error('Bạn không thể nhận việc của chính mình.')
@@ -214,42 +222,37 @@ export function mockAcceptJob(id: string, viewer: MockViewer): JobEscrowResponse
     throw new Error('Công việc đã có người nhận hoặc không còn mở.')
   }
 
-  const escrow = mockHoldEscrow(job.id, job.owner.id, me.id, job.price)
-  updateMockJob(id, { status: 'Assigned' })
-  return { escrow, balance: mockBalanceOf(job.owner.id) }
+  const tokenFee = Math.ceil(job.price / 10000);
+  const b = mockTopUp(me.id, 'tasker', -tokenFee);
+  if (b.balance < 0) {
+      mockTopUp(me.id, 'tasker', tokenFee);
+      throw new Error(`Số dư không đủ để nhận việc. Cần ${tokenFee} Token.`);
+  }
+  
+  mockJobWorkers.set(id, me.id)
+  return updateMockJob(id, { status: 'Assigned' })
 }
 
 export function mockReportJob(id: string, viewer: MockViewer): void {
   const me = requireViewer(viewer)
   const job = findJob(id)
-  const escrow = mockGetEscrow(id)
-  if (
-    job.status !== 'Assigned' ||
-    !escrow ||
-    escrow.status !== 'Held' ||
-    escrow.payeeId !== me.id
-  ) {
+  // Verify the tasker who accepted the job
+  if (job.status !== 'Assigned' || mockJobWorkers.get(id) !== me.id) {
     throw new Error('Bạn không phải người nhận việc của công việc này.')
   }
-
+  // Mark as reported completed
   updateMockJob(id, { isCompletedReported: true })
 }
 
-export function mockReleaseEscrowJob(id: string, viewer: MockViewer): JobEscrowResponse {
+
+export function mockReleaseEscrowJob(id: string, viewer: MockViewer): JobModel {
   const me = requireViewer(viewer)
   const job = findJob(id)
   if (job.owner.id !== me.id) throw new Error('Bạn không phải người trả tiền của công việc này.')
-  const escrow = mockGetEscrow(id)
-  if (!escrow || escrow.status !== 'Held') {
-    throw new Error('Khoản ký quỹ không còn đang được giữ.')
-  }
-
-  const released = mockReleaseEscrow(id, me.id)
-  updateMockJob(id, { status: 'Done' })
-  return { escrow: released, balance: mockBalanceOf(escrow.payeeId) }
+  return updateMockJob(id, { status: 'Done' })
 }
 
-export function mockCancelJob(id: string, viewer: MockViewer): JobEscrowResponse | null {
+export function mockCancelJob(id: string, viewer: MockViewer): JobModel | null {
   const me = requireViewer(viewer)
   const job = findJob(id)
   if (job.owner.id !== me.id) throw new Error('Bạn không phải chủ công việc.')
@@ -259,24 +262,15 @@ export function mockCancelJob(id: string, viewer: MockViewer): JobEscrowResponse
     throw new Error('Người nhận việc đã báo hoàn thành, hãy giải ngân thay vì hủy.')
   }
 
-  const escrow = mockGetEscrow(id)
-  const refunded = escrow && escrow.status === 'Held' ? mockRefundEscrow(id) : null
-  updateMockJob(id, { status: 'Cancelled' })
-  return refunded ? { escrow: refunded, balance: mockBalanceOf(refunded.payerId) } : null
+  return updateMockJob(id, { status: 'Cancelled' })
 }
 
-export function mockRefundJob(id: string, viewer: MockViewer): JobEscrowResponse {
+export function mockRefundJob(id: string, viewer: MockViewer): JobModel {
   const me = requireViewer(viewer)
-  findJob(id)
-  const escrow = mockGetEscrow(id)
-  if (!escrow || escrow.status !== 'Held') {
-    throw new Error('Khoản ký quỹ không còn đang được giữ.')
+  const job = findJob(id)
+  if (job.status !== 'Assigned') {
+    throw new Error('Công việc không hợp lệ.')
   }
-  if (escrow.payeeId !== me.id) {
-    throw new Error('Bạn không phải người nhận việc của công việc này.')
-  }
-
-  const refunded = mockRefundEscrow(id)
-  updateMockJob(id, { status: 'Open', isCompletedReported: false })
-  return { escrow: refunded, balance: mockBalanceOf(refunded.payerId) }
+  mockJobWorkers.delete(id)
+  return updateMockJob(id, { status: 'Open', isCompletedReported: false })
 }

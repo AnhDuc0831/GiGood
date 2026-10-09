@@ -1,3 +1,4 @@
+import { Redirect } from 'expo-router'
 import { useMemo, useState } from 'react'
 import {
   ActivityIndicator,
@@ -23,6 +24,11 @@ import { colors } from '../../../constants/theme'
 import type { JobModel } from '../../../lib/features/jobs/types'
 
 export default function ActiveScreen() {
+  const { currentRole } = useAuth()
+  if (currentRole === 'seeker') {
+    return <Redirect href="/(app)/(tabs)/post" />
+  }
+
   const { profile } = useAuth()
   const { jobs, refreshing, refetch, reportJob } = useJobs({ mine: true, status: 'Assigned' })
   const { openConversation } = useChat()
@@ -130,6 +136,10 @@ export default function ActiveScreen() {
                   )}
                 </TouchableOpacity>
               )}
+            <TouchableOpacity onPress={() => setRatingJob(job)}
+              className="mt-2 w-full bg-green-500 py-2.5 rounded-xl items-center">
+              <Text className="text-white text-xs font-bold">Đánh giá</Text>
+            </TouchableOpacity>
             </View>
           )
         })

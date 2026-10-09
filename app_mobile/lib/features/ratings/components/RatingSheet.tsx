@@ -1,3 +1,4 @@
+import { VTextInput } from '../../../../components/ui/VTextInput';
 import { useEffect, useState } from 'react'
 import {
   ActivityIndicator,
@@ -94,7 +95,7 @@ export function RatingSheet({ visible, onClose, jobId, revieweeName, onSubmitted
             <StarRow value={rate} size={34} onChange={setRate} />
           </View>
 
-          <TextInput
+          <VTextInput
             value={comment}
             onChangeText={setComment}
             placeholder="Chia sẻ trải nghiệm của bạn (không bắt buộc)"

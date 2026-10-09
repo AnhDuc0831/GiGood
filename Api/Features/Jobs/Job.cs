@@ -25,6 +25,7 @@ public class Job
     public bool IsCompletedReported { get; set; }
     // Task 12a: admin-hidden jobs are excluded from the public list.
     public bool Hidden { get; set; }
+    public bool IsUrgent { get; set; }
     public double? Lat { get; set; }
     public double? Lng { get; set; }
     public string? LocationText { get; set; }

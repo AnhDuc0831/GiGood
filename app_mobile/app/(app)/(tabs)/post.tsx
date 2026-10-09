@@ -1,3 +1,6 @@
+import { useAuth } from '../../../hooks/useAuth'
+import { Redirect } from 'expo-router'
+import { VTextInput } from '../../../components/ui/VTextInput';
 import { useState } from 'react'
 import {
   ActivityIndicator,
@@ -12,6 +15,7 @@ import {
 } from 'react-native'
 import { FontAwesome } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
+import { useQueryClient } from '@tanstack/react-query'
 import * as ImagePicker from 'expo-image-picker'
 import { useJobs } from '../../../hooks/useJobs'
 import { useDeviceLocation } from '../../../hooks/useDeviceLocation'
@@ -33,10 +37,16 @@ const TEMPLATES = [
 const MAX_IMAGES = 5
 
 export default function PostScreen() {
+  const { currentRole } = useAuth()
+  if (currentRole === 'tasker') {
+    return <Redirect href="/(app)/(tabs)/board" />
+  }
+
   const { createJob, uploadImage } = useJobs()
   const { showToast } = useUi()
   const { position, request: requestDevicePosition } = useDeviceLocation()
   const router = useRouter()
+  const queryClient = useQueryClient()
   const [title, setTitle] = useState('')
   const [category, setCategory] = useState<Category>('repair')
   const [description, setDescription] = useState('')
@@ -105,14 +115,14 @@ export default function PostScreen() {
         uploaded.push(await uploadImage(uri))
       }
       const job = await createJob({
-        title: title.trim() + (urgent ? ' (Cần liền)' : ''),
+        title: title.trim(),
         description: description.trim(),
         category,
         price,
         locationText: location.trim(),
         lat: pickedCoords?.lat,
         lng: pickedCoords?.lng,
-        images: uploaded,
+        images: uploaded, isUrgent: urgent,
       })
       setTitle('')
       setDescription('')
@@ -122,6 +132,7 @@ export default function PostScreen() {
       setImages([])
       setPickedCoords(null)
       setPickerOpen(false)
+      queryClient.invalidateQueries({ queryKey: ['wallet'] });
       showToast('Đăng việc thành công! Đang tìm Tasker phù hợp...', 'success')
       router.push(`/(app)/job/${job.id}`)
     } catch (error) {
@@ -167,7 +178,7 @@ export default function PostScreen() {
       <View className="space-y-4">
         <View className="space-y-1.5">
           <Text className="text-xs font-bold text-gray-700">Tên công việc <Text className="text-red-500">*</Text></Text>
-          <TextInput value={title} onChangeText={setTitle} placeholder="Ví dụ: Tìm thợ thông đường ống nước bồn rửa"
+          <VTextInput value={title} onChangeText={setTitle} placeholder="Ví dụ: Tìm thợ thông đường ống nước bồn rửa"
             placeholderTextColor={colors.grayMuted} className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm" />
         </View>
 
@@ -186,7 +197,7 @@ export default function PostScreen() {
 
         <View className="space-y-1.5">
           <Text className="text-xs font-bold text-gray-700">Mô tả công việc chi tiết <Text className="text-red-500">*</Text></Text>
-          <TextInput value={description} onChangeText={setDescription} placeholder="Ghi rõ yêu cầu để Tasker chuẩn bị dụng cụ phù hợp..."
+          <VTextInput value={description} onChangeText={setDescription} placeholder="Ghi rõ yêu cầu để Tasker chuẩn bị dụng cụ phù hợp..."
             placeholderTextColor={colors.grayMuted} multiline numberOfLines={3}
             className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm" style={{ minHeight: 80, textAlignVertical: 'top' }} />
         </View>
@@ -195,9 +206,9 @@ export default function PostScreen() {
           <View className="flex-1 space-y-1.5">
             <Text className="text-xs font-bold text-gray-700">Mức giá đề xuất <Text className="text-red-500">*</Text></Text>
             <View className="relative">
-              <TextInput value={budget} onChangeText={setBudget} placeholder="100,000" placeholderTextColor={colors.grayMuted}
+              <VTextInput value={budget} onChangeText={setBudget} placeholder="100" placeholderTextColor={colors.grayMuted}
                 keyboardType="number-pad" className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm" />
-              <Text className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[10px] text-gray-400 font-bold">VND</Text>
+              <Text className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[10px] text-gray-400 font-bold">VNĐ</Text>
             </View>
           </View>
           <View className="flex-1 space-y-1.5">
@@ -206,7 +217,7 @@ export default function PostScreen() {
               className="w-full px-3 py-3 rounded-xl border border-gray-200 items-center justify-center"
               style={[{ minHeight: 44 }, urgent ? { backgroundColor: colors.orangeSoft, borderColor: colors.orangeBorder } : undefined]}>
               <Text className={`text-xs font-bold ${urgent ? 'text-orange-500' : 'text-gray-600'}`}>
-                {urgent ? 'Cần liền (phụ phí)' : 'Bình thường'}
+                {urgent ? 'Cần liền (15 Token)' : 'Bình thường (10 Token)'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -226,7 +237,7 @@ export default function PostScreen() {
             <View className="absolute left-4 top-0 bottom-0 justify-center z-10">
               <FontAwesome name="map-marker" size={12} color={colors.grayMuted} />
             </View>
-            <TextInput value={location} onChangeText={setLocation} placeholder="Số nhà, đường, quận..."
+            <VTextInput value={location} onChangeText={setLocation} placeholder="Số nhà, đường, quận..."
               placeholderTextColor={colors.grayMuted} className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 text-sm" />
           </View>
           {pickerOpen && (

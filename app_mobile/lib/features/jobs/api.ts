@@ -37,9 +37,9 @@ export async function deleteJob(id: string): Promise<void> {
 
 // --- task 06 escrow lifecycle -------------------------------------------------
 
-/** `POST /api/jobs/{id}/accept` (tasker, not owner) -> held escrow + payer balance. */
-export async function acceptJob(id: string): Promise<JobEscrowResponse> {
-  const { data } = await apiClient.post<JobEscrowResponse>(`/api/jobs/${id}/accept`)
+/** `POST /api/jobs/{id}/accept` (tasker) */
+export async function acceptJob(id: string): Promise<JobModel> {
+  const { data } = await apiClient.post<JobModel>(`/api/jobs/${id}/accept`)
   return data
 }
 
@@ -49,20 +49,20 @@ export async function reportJob(id: string): Promise<void> {
 }
 
 /** `POST /api/jobs/{id}/release-escrow` (owner, Held) -> Released + payee credited. */
-export async function releaseEscrow(id: string): Promise<JobEscrowResponse> {
-  const { data } = await apiClient.post<JobEscrowResponse>(`/api/jobs/${id}/release-escrow`)
+export async function releaseEscrow(id: string): Promise<JobModel> {
+  const { data } = await apiClient.post<JobModel>(`/api/jobs/${id}/release-escrow`)
   return data
 }
 
 /** `POST /api/jobs/{id}/cancel` (owner) -> refunds Held escrow, or 204 when Open without escrow. */
-export async function cancelJob(id: string): Promise<JobEscrowResponse | null> {
-  const { data, status } = await apiClient.post<JobEscrowResponse>(`/api/jobs/${id}/cancel`)
+export async function cancelJob(id: string): Promise<JobModel | null> {
+  const { data, status } = await apiClient.post<JobModel>(`/api/jobs/${id}/cancel`)
   return status === 204 ? null : data
 }
 
 /** `POST /api/jobs/{id}/refund` (assigned tasker abandons) -> job back to Open. */
-export async function refundJob(id: string): Promise<JobEscrowResponse> {
-  const { data } = await apiClient.post<JobEscrowResponse>(`/api/jobs/${id}/refund`)
+export async function refundJob(id: string): Promise<JobModel> {
+  const { data } = await apiClient.post<JobModel>(`/api/jobs/${id}/refund`)
   return data
 }
 

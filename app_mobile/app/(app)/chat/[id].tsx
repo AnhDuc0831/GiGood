@@ -1,3 +1,4 @@
+import { VTextInput } from '../../../components/ui/VTextInput';
 import { useEffect, useRef, useState } from 'react'
 import {
   ActivityIndicator,
@@ -169,7 +170,7 @@ export default function ChatDetailScreen() {
       )}
 
       <View className="flex-row items-center bg-white border-t border-gray-200 px-3 py-2">
-        <TextInput
+        <VTextInput
           value={text}
           onChangeText={(value) => {
             setText(value)

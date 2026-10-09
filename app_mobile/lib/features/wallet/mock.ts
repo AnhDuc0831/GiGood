@@ -15,8 +15,8 @@ import type {
  */
 
 const ROLE_SEED_BALANCE: Record<Role, number> = {
-  seeker: 1_420_000,
-  tasker: 2_850_000,
+  seeker: 0,
+  tasker: 0,
 }
 
 type MockWallet = {

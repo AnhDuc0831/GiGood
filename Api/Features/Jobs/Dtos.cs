@@ -10,7 +10,8 @@ public sealed record CreateJobRequest(
     double? Lat,
     double? Lng,
     string? LocationText,
-    List<string>? Images);
+    List<string>? Images,
+    bool IsUrgent = false);
 
 public sealed record UpdateJobRequest(
     string? Title,
@@ -38,6 +39,7 @@ public sealed record JobDto(
     double? DistanceKm,
     string? LocationText,
     List<string> Images,
+    bool IsUrgent,
     DateTime CreatedAt,
     DateTime UpdatedAt);
 

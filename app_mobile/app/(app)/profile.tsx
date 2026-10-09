@@ -23,7 +23,8 @@ import { AVAILABILITY_LABEL, CATEGORY_META, VEHICLE_LABEL } from "../../lib/cate
 import { getApiErrorMessage } from "../../lib/features/jobs/api";
 import { useProfile } from "../../lib/features/profile/hooks/useProfile";
 import type { ProfileUpdate } from "../../lib/features/profile/types";
-import { formatVnd } from "../../lib/format";
+import { RegistrationProgressBar } from "../../components/ui/RegistrationProgressBar";
+import { formatVnd, formatToken } from "../../lib/format";
 import { colors } from "../../constants/theme";
 import type { Availability, Category, Vehicle } from "../../types";
 
@@ -45,6 +46,8 @@ export default function ProfileScreen() {
     uploadAvatar,
     isSaving,
     isUploadingAvatar,
+    verifyIdentity,
+    isVerifying,
   } = useProfile();
   const { showToast } = useUi();
   const router = useRouter();
@@ -227,20 +230,19 @@ export default function ProfileScreen() {
         </View>
 
         {/* Wallet stats */}
-        <View className="flex-row gap-2 mb-5">
-          <View className="flex-1 bg-stone-50 border border-gray-200 rounded-2xl p-3 items-center">
+        <View className="mb-5 bg-stone-50 border border-gray-200 rounded-2xl p-3 items-center flex-row justify-between">
+          <View>
             <Text className="text-[10px] text-gray-500">Ví của bạn</Text>
-            <Text className="text-sm font-extrabold text-gray-800">
-              {formatVnd(balance)}
+            <Text className="text-base font-extrabold text-gray-800">
+              {formatToken(balance)}
             </Text>
           </View>
-          <View className="flex-1 bg-teal-50 border border-teal-200 rounded-2xl p-3 items-center">
-            <Text className="text-[10px] text-gray-500">Ký quỹ</Text>
-            <Text className="text-sm font-extrabold text-teal-600">
-              {formatVnd(escrowHeld)}
-            </Text>
-          </View>
+          <TouchableOpacity onPress={() => router.push('/(app)/topup')} className="bg-orange-500 px-4 py-2 rounded-xl">
+            <Text className="text-white text-xs font-bold">Mua Token</Text>
+          </TouchableOpacity>
         </View>
+
+        <RegistrationProgressBar />
 
         {/* Personal info */}
         <View className="bg-white border border-gray-200 rounded-2xl p-4 mb-5 space-y-3">
@@ -378,17 +380,32 @@ export default function ProfileScreen() {
         </TouchableOpacity>
 
         {/* Identity verification */}
-        <View className="bg-stone-50 border border-gray-200 rounded-2xl p-3.5 flex-row items-center justify-between mb-5">
+        <TouchableOpacity
+          onPress={async () => {
+            try {
+              await verifyIdentity();
+              showToast("Đã xác thực danh tính", "success");
+            } catch (e) {
+              showToast("Không thể xác thực. Vui lòng thử lại.", "error");
+            }
+          }}
+          disabled={isVerifying}
+          className={`bg-stone-50 border border-gray-200 rounded-2xl p-3.5 flex-row items-center justify-between mb-5 ${isVerifying ? "opacity-70" : ""}`}
+        >
           <View className="flex-row items-center space-x-2.5">
             <FontAwesome name="id-card" size={14} color={colors.grayMuted} />
             <Text className="text-xs font-bold text-gray-700">
-              Xác thực danh tính
+              Xác thực danh tính (Mock KYC)
             </Text>
           </View>
-          <Text className="text-[10px] font-bold text-amber-500">
-            Chưa xác thực
-          </Text>
-        </View>
+          {isVerifying ? (
+            <ActivityIndicator size="small" color={colors.teal} />
+          ) : (
+            <Text className={`text-[10px] font-bold ${p.registrationProgress?.step3_SkillsVerified ? "text-teal-600" : "text-amber-500"}`}>
+              {p.registrationProgress?.step3_SkillsVerified ? "Đã xác thực" : "Chạm để xác thực"}
+            </Text>
+          )}
+        </TouchableOpacity>
 
         <TouchableOpacity
           onPress={() => void signOut()}

@@ -31,7 +31,6 @@ public static class AuthEndpoints
         // Task 08: profile edit, avatar upload, dual-role switch and the KYC stub.
         app.MapPatch("/api/me", UpdateMeAsync).RequireAuthorization().WithTags("Auth");
         app.MapPost("/api/me/avatar", UpdateAvatarAsync).RequireAuthorization().DisableAntiforgery().WithTags("Auth");
-        app.MapPost("/api/me/switch-role", SwitchRoleAsync).RequireAuthorization().WithTags("Auth");
         app.MapPost("/api/me/verify", VerifyAsync).RequireAuthorization().WithTags("Auth");
 
         return app;
@@ -295,6 +294,7 @@ public static class AuthEndpoints
             user.AvatarUrl = request.AvatarUrl;
         }
 
+        await CheckAndAwardBonusAsync(user, db, ct);
         await db.SaveChangesAsync(ct);
 
         return TypedResults.Ok(ToDto(user));
@@ -327,6 +327,7 @@ public static class AuthEndpoints
         }
 
         user.AvatarUrl = result.Url;
+        await CheckAndAwardBonusAsync(user, db, ct);
         await db.SaveChangesAsync(ct);
 
         return TypedResults.Ok(new AvatarResponse(result.Url!));
@@ -370,7 +371,51 @@ public static class AuthEndpoints
     }
 
     // Task 08: KYC stub — verification stays false until the real flow lands.
-    private static Ok<VerifyResponse> VerifyAsync() => TypedResults.Ok(new VerifyResponse(false));
+    private static async Task<Results<Ok<VerifyResponse>, UnauthorizedHttpResult>> VerifyAsync(ClaimsPrincipal principal, AppDbContext db, CancellationToken ct)
+    {
+        var userId = GetUserId(principal);
+        if (userId is null) return TypedResults.Unauthorized();
+        
+        var user = await db.Users.SingleOrDefaultAsync(u => u.Id == userId, ct);
+        if (user is null) return TypedResults.Unauthorized();
+
+        user.Verified = true;
+        await CheckAndAwardBonusAsync(user, db, ct);
+        await db.SaveChangesAsync(ct);
+        
+        return TypedResults.Ok(new VerifyResponse(user.Verified));
+    }
+
+    private static async Task CheckAndAwardBonusAsync(User user, AppDbContext db, CancellationToken ct)
+    {
+        if (user.RegistrationBonusAwarded) return;
+
+        // Step 1 is always true.
+        // Step 2: ProfileCompleted
+        if (!user.ProfileCompleted)
+        {
+            user.ProfileCompleted = !string.IsNullOrWhiteSpace(user.AvatarUrl) && !string.IsNullOrWhiteSpace(user.Location);
+        }
+
+        // Step 3: Skills verified is user.Verified
+        
+        if (user.ProfileCompleted && user.Verified)
+        {
+            user.RegistrationBonusAwarded = true;
+
+            var wallet = await db.Wallets.SingleOrDefaultAsync(w => w.UserId == user.Id, ct);
+            if (wallet != null)
+            {
+                wallet.Balance += 20;
+                db.WalletTransactions.Add(new Api.Features.Wallet.WalletTransaction
+                {
+                    UserId = user.Id,
+                    Type = Api.Features.Wallet.WalletTransactionType.TopUp,
+                    Amount = 20
+                });
+            }
+        }
+    }
 
     private static ProblemHttpResult InvalidSession() =>
         TypedResults.Problem(
@@ -412,7 +457,8 @@ public static class AuthEndpoints
         user.CurrentRole,
         ToTaskerProfileDto(user),
         user.CreatedAt,
-        user.IsAdmin);
+        user.IsAdmin,
+        new RegistrationProgressDto(true, user.ProfileCompleted, user.Verified, user.RegistrationBonusAwarded));
 
     private static TaskerProfileDto? ToTaskerProfileDto(User user)
     {

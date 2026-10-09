@@ -28,3 +28,9 @@ export async function switchRole(role: Role): Promise<Role> {
   const { data } = await apiClient.post<SwitchRoleResponse>('/api/me/switch-role', { role })
   return data.role
 }
+
+/** `POST /api/me/verify` -> `{verified}`. */
+export async function verifyIdentity(): Promise<boolean> {
+  const { data } = await apiClient.post<{ verified: boolean }>('/api/me/verify')
+  return data.verified
+}

@@ -1,3 +1,4 @@
+import { Redirect } from 'expo-router'
 import { useMemo } from 'react'
 import { FlatList, RefreshControl, Text, View } from 'react-native'
 import { useRouter } from 'expo-router'
@@ -6,9 +7,15 @@ import { useJobs } from '../../../hooks/useJobs'
 import { JobCard } from '../../../components/ui/JobCard'
 import { SkeletonList } from '../../../components/ui/SkeletonCard'
 import { EmptyState } from '../../../components/shared/EmptyState'
+import { RegistrationProgressBar } from '../../../components/ui/RegistrationProgressBar'
 import { colors } from '../../../constants/theme'
 
 export default function JobsScreen() {
+  const { currentRole } = useAuth()
+  if (currentRole === 'tasker') {
+    return <Redirect href="/(app)/(tabs)/board" />
+  }
+
   const { profile } = useAuth()
   const { jobs, loading, refreshing, refetch } = useJobs()
   const router = useRouter()
@@ -32,6 +39,7 @@ export default function JobsScreen() {
       }
       ListHeaderComponent={
         <View className="px-4 mb-2">
+          <RegistrationProgressBar />
           <Text className="text-lg font-extrabold text-gray-800">Việc của tôi</Text>
           <Text className="text-xs text-gray-500">{myJobs.length} công việc đã đăng</Text>
         </View>

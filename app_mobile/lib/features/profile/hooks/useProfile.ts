@@ -7,6 +7,8 @@ import { USE_MOCK } from '../../../core/config/env'
 import * as profileApi from '../api'
 import { profileQueryKey, type ProfileUpdate } from '../types'
 import type { UserProfile } from '../../../../types'
+import { mockTopUp } from '../../wallet/mock'
+import { walletQueryKey } from '../../../../hooks/useWallet'
 
 /** Applies a `PATCH /api/me` body onto the cached profile for the offline demo. */
 function mergeProfile(current: UserProfile, body: ProfileUpdate): UserProfile {
@@ -27,13 +29,29 @@ function mergeProfile(current: UserProfile, body: ProfileUpdate): UserProfile {
         }
       : null
 
-  return {
+  const nextLocation = body.location ?? current.location
+  const nextAvatar = body.avatarUrl ?? current.avatar
+
+  const newProfile = {
     ...current,
     name: body.name ?? current.name,
-    location: body.location ?? current.location,
-    avatar: body.avatarUrl ?? current.avatar,
+    location: nextLocation,
+    avatar: nextAvatar,
     taskerProfile,
+    registrationProgress: current.registrationProgress ? { ...current.registrationProgress } : undefined
   }
+  
+  if (newProfile.registrationProgress && !newProfile.registrationProgress.bonusAwarded) {
+    if (!newProfile.registrationProgress.step2_ProfileCompleted) {
+        newProfile.registrationProgress.step2_ProfileCompleted = !!(nextLocation && nextAvatar && nextAvatar !== 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=150' && nextAvatar !== 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=150');
+    }
+    
+    if (newProfile.registrationProgress.step1_PhoneVerified && newProfile.registrationProgress.step2_ProfileCompleted && newProfile.registrationProgress.step3_SkillsVerified) {
+        newProfile.registrationProgress.bonusAwarded = true;
+    }
+  }
+
+  return newProfile;
 }
 
 /**
@@ -68,6 +86,17 @@ export function useProfile() {
     return cached ?? contextProfile
   }, [queryClient, contextProfile])
 
+  const checkAndAwardBonusLocal = useCallback((current: UserProfile, newProfile: UserProfile) => {
+      const justAwarded = newProfile.registrationProgress?.bonusAwarded && !current.registrationProgress?.bonusAwarded;
+      if (justAwarded) {
+          if (USE_MOCK) {
+              mockTopUp(newProfile.id, newProfile.role, 20);
+          }
+          queryClient.invalidateQueries({ queryKey: walletQueryKey });
+          dispatch({ type: 'SHOW_BONUS_POPUP' });
+      }
+  }, [queryClient, dispatch]);
+
   const updateMutation = useMutation<UserProfile, unknown, ProfileUpdate>({
     mutationFn: async (body) => {
       if (USE_MOCK) {
@@ -77,7 +106,13 @@ export function useProfile() {
       }
       return toUserProfile(await profileApi.updateProfile(body))
     },
-    onSuccess: applyProfile,
+    onSuccess: (newProfile) => {
+      const current = readCurrent();
+      if (current) {
+          checkAndAwardBonusLocal(current, newProfile);
+      }
+      applyProfile(newProfile);
+    },
   })
 
   const avatarMutation = useMutation<string, unknown, string>({
@@ -86,7 +121,55 @@ export function useProfile() {
     onSuccess: (avatarUrl) => {
       const current = readCurrent()
       if (!current) return
-      applyProfile({ ...current, avatar: resolveImageUrl(avatarUrl) ?? avatarUrl })
+      
+      const nextAvatar = resolveImageUrl(avatarUrl) ?? avatarUrl;
+      const newProfile = { 
+        ...current, 
+        avatar: nextAvatar,
+        registrationProgress: current.registrationProgress ? { ...current.registrationProgress } : undefined
+      }
+
+      if (newProfile.registrationProgress && !newProfile.registrationProgress.bonusAwarded) {
+          if (!newProfile.registrationProgress.step2_ProfileCompleted) {
+              newProfile.registrationProgress.step2_ProfileCompleted = !!(newProfile.location && nextAvatar && nextAvatar !== 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=150' && nextAvatar !== 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=150');
+          }
+          if (newProfile.registrationProgress.step1_PhoneVerified && newProfile.registrationProgress.step2_ProfileCompleted && newProfile.registrationProgress.step3_SkillsVerified) {
+              newProfile.registrationProgress.bonusAwarded = true;
+          }
+      }
+
+      checkAndAwardBonusLocal(current, newProfile);
+      applyProfile(newProfile)
+    },
+  })
+
+  const verifyMutation = useMutation<boolean, unknown, void>({
+    mutationFn: () => (USE_MOCK ? Promise.resolve(true) : profileApi.verifyIdentity()),
+    onSuccess: (verified) => {
+      const current = readCurrent()
+      if (!current) return
+      
+      const newProfile = { 
+        ...current,
+        taskerProfile: current.taskerProfile ? { ...current.taskerProfile } : null,
+        registrationProgress: current.registrationProgress ? { ...current.registrationProgress } : undefined
+      };
+      
+      if (newProfile.taskerProfile) {
+          newProfile.taskerProfile.verified = verified;
+      }
+      if (newProfile.registrationProgress) {
+          newProfile.registrationProgress.step3_SkillsVerified = verified;
+          if (newProfile.registrationProgress.step1_PhoneVerified && newProfile.registrationProgress.step2_ProfileCompleted && newProfile.registrationProgress.step3_SkillsVerified) {
+              newProfile.registrationProgress.bonusAwarded = true;
+          }
+      }
+
+      checkAndAwardBonusLocal(current, newProfile);
+      applyProfile(newProfile);
+      if (!USE_MOCK) {
+        query.refetch(); // Refetch from backend to get bonus/progress updates
+      }
     },
   })
 
@@ -98,5 +181,7 @@ export function useProfile() {
     isSaving: updateMutation.isPending,
     uploadAvatar: avatarMutation.mutateAsync,
     isUploadingAvatar: avatarMutation.isPending,
+    verifyIdentity: verifyMutation.mutateAsync,
+    isVerifying: verifyMutation.isPending,
   }
 }

@@ -1,3 +1,4 @@
+import { VTextInput } from '../../components/ui/VTextInput';
 import {
   View,
   Text,
@@ -82,18 +83,18 @@ export default function SignupBasicScreen() {
         <View className="space-y-4">
           <View className="space-y-1.5">
             <Text className="text-xs font-bold text-gray-700">Họ và tên <Text className="text-red-500">*</Text></Text>
-            <TextInput value={name} onChangeText={setName} placeholder="Nguyễn Văn A" placeholderTextColor={colors.grayMuted}
+            <VTextInput value={name} onChangeText={setName} placeholder="Nguyễn Văn A" placeholderTextColor={colors.grayMuted}
               className="w-full px-4 py-3.5 rounded-2xl border border-gray-200 text-sm" />
           </View>
           <View className="space-y-1.5">
             <Text className="text-xs font-bold text-gray-700">Số điện thoại <Text className="text-red-500">*</Text></Text>
-            <TextInput value={phone} onChangeText={setPhone} placeholder="09xx xxx xxx" placeholderTextColor={colors.grayMuted}
+            <VTextInput value={phone} onChangeText={setPhone} placeholder="09xx xxx xxx" placeholderTextColor={colors.grayMuted}
               className="w-full px-4 py-3.5 rounded-2xl border border-gray-200 text-sm" keyboardType="phone-pad" />
             <Text className="text-[10px] text-gray-400">Dùng để xác thực danh tính và liên hệ khi có việc.</Text>
           </View>
           <View className="space-y-1.5">
             <Text className="text-xs font-bold text-gray-700">Mật khẩu <Text className="text-red-500">*</Text></Text>
-            <TextInput value={password} onChangeText={setPassword} placeholder="Tối thiểu 6 ký tự" placeholderTextColor={colors.grayMuted}
+            <VTextInput value={password} onChangeText={setPassword} placeholder="Tối thiểu 6 ký tự" placeholderTextColor={colors.grayMuted}
               className="w-full px-4 py-3.5 rounded-2xl border border-gray-200 text-sm" secureTextEntry />
           </View>
           <View className="space-y-1.5">
@@ -102,7 +103,7 @@ export default function SignupBasicScreen() {
               <View className="absolute left-4 top-0 bottom-0 justify-center z-10">
                 <FontAwesome name="map-marker" size={12} color={colors.grayMuted} />
               </View>
-              <TextInput value={location} onChangeText={setLocation} placeholder="Quận/Phường, Thành phố" placeholderTextColor={colors.grayMuted}
+              <VTextInput value={location} onChangeText={setLocation} placeholder="Quận/Phường, Thành phố" placeholderTextColor={colors.grayMuted}
                 className="w-full pl-10 pr-4 py-3.5 rounded-2xl border border-gray-200 text-sm" />
             </View>
           </View>

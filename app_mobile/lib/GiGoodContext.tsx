@@ -80,7 +80,9 @@ type Action =
   | { type: "SET_ACTIVE_CHAT"; payload: number | null }
   | { type: "SET_CHAT_DETAIL"; payload: boolean }
   | { type: "SHOW_TOAST"; payload: { message: string; variant: ToastVariant } }
-  | { type: "HIDE_TOAST" };
+  | { type: "HIDE_TOAST" }
+  | { type: "SHOW_BONUS_POPUP" }
+  | { type: "HIDE_BONUS_POPUP" };
 
 let nextJobId = 300;
 
@@ -416,6 +418,18 @@ function reducer(state: GiGoodState, action: Action): GiGoodState {
           ...state.ui,
           toast: state.ui.toast ? { ...state.ui.toast, visible: false } : null,
         },
+      };
+
+    case "SHOW_BONUS_POPUP":
+      return {
+        ...state,
+        ui: { ...state.ui, bonusPopupOpen: true }
+      };
+
+    case "HIDE_BONUS_POPUP":
+      return {
+        ...state,
+        ui: { ...state.ui, bonusPopupOpen: false }
       };
 
     default:

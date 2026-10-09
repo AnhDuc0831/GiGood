@@ -28,7 +28,7 @@ if (string.IsNullOrWhiteSpace(connectionString))
 {
     // Placeholder until a real Neon pooled URL is wired via
     // ConnectionStrings__Default (see .env.example). No connection is opened at startup.
-    connectionString = "Host=__NEON_HOST__;Database=gigood;Username=__NEON_USER__;Password=__NEON_PASSWORD__;SSL Mode=Require";
+    connectionString = builder.Configuration.GetConnectionString("Default");
 }
 
 builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
@@ -186,6 +186,12 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    await db.Database.MigrateAsync();
+}
 
 // Dev-only quick-login seed; never blocks startup when the DB is unreachable.
 await app.SeedDevAuthAsync();

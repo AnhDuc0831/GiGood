@@ -24,5 +24,8 @@ public class User
     public string? Vehicle { get; set; }
     public bool Verified { get; set; }
 
+    public bool ProfileCompleted { get; set; }
+    public bool RegistrationBonusAwarded { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

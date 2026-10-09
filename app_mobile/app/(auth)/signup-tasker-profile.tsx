@@ -1,3 +1,4 @@
+import { VTextInput } from '../../components/ui/VTextInput';
 import {
   View,
   Text,
@@ -133,7 +134,7 @@ export default function SignupTaskerProfileScreen() {
 
           <View className="space-y-1.5">
             <Text className="text-xs font-bold text-gray-700">Giới thiệu ngắn về bạn</Text>
-            <TextInput value={bio} onChangeText={setBio} placeholder="VD: Mình có 2 năm kinh nghiệm sửa chữa điện nước..."
+            <VTextInput value={bio} onChangeText={setBio} placeholder="VD: Mình có 2 năm kinh nghiệm sửa chữa điện nước..."
               placeholderTextColor={colors.grayMuted} multiline numberOfLines={3}
               className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm" style={{ minHeight: 80, textAlignVertical: 'top' }} />
           </View>

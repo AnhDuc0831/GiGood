@@ -1,3 +1,4 @@
+import { VTextInput } from './VTextInput';
 import { View, Text, TextInput, TextInputProps } from 'react-native'
 import { FontAwesome } from '@expo/vector-icons'
 import { colors } from '@/constants/theme'
@@ -21,7 +22,7 @@ export function FormField({ label, required, icon, helperText, className, ...inp
             <FontAwesome name={icon} size={12} color={colors.grayMuted} />
           </View>
         )}
-        <TextInput
+        <VTextInput
           className={`${icon ? 'pl-10' : 'px-4'} pr-4 py-3.5 rounded-2xl border border-gray-200 text-sm bg-white ${className || ''}`}
           placeholderTextColor={colors.grayMuted}
           {...inputProps}

@@ -1,3 +1,4 @@
+import { Redirect } from 'expo-router'
 import { useMemo, useState } from 'react'
 import { RefreshControl, ScrollView, Text, View } from 'react-native'
 import { FontAwesome } from '@expo/vector-icons'
@@ -15,6 +16,11 @@ function formatDate(iso: string): string {
 }
 
 export default function EarningsScreen() {
+  const { currentRole } = useAuth()
+  if (currentRole === 'seeker') {
+    return <Redirect href="/(app)/(tabs)/post" />
+  }
+
   const { profile } = useAuth()
   const { balance, escrowHeld, transactions, loading, refetch } = useWallet()
   const { escrows, refetch: refetchEscrows } = useEscrows({ status: 'Released' })
