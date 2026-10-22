@@ -15,6 +15,7 @@ ENV ASPNETCORE_URLS=http://+:8080
 ENV DOTNET_EnableDiagnostics=0
 
 COPY --from=build /app/publish .
-USER $APP_UID
+# Xoá dòng USER $APP_UID để API chạy bằng quyền root (mới có quyền lưu ảnh)
+# USER $APP_UID
 
 ENTRYPOINT ["sh", "-c", "dotnet Api.dll --urls http://0.0.0.0:${PORT:-8080}"]

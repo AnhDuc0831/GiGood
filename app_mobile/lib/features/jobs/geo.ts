@@ -5,7 +5,7 @@ export type LatLng = { lat: number; lng: number }
 export const Q1_CENTER: LatLng = { lat: 10.7769, lng: 106.7009 }
 
 /** Default geo query radius in km (API default; max 50). */
-export const DEFAULT_RADIUS_KM = 5
+export const DEFAULT_RADIUS_KM = 30
 
 /** Visible half-span of the demo map in degrees (~5.5km). */
 export const MAP_SPAN_DEG = 0.05

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import {
   Pressable,
   Text,
@@ -7,9 +7,11 @@ import {
   type DimensionValue,
   type LayoutChangeEvent,
 } from 'react-native'
+import { WebView, type WebViewMessageEvent } from 'react-native-webview'
 import { FontAwesome } from '@expo/vector-icons'
 import type { JobModel } from '../types'
 import { CATEGORY_META } from '../../../categories'
+import { formatVnd } from '../../../format'
 import {
   clamp,
   projectToPercent,
@@ -42,11 +44,165 @@ function asPercent(value: number): DimensionValue {
   return `${value}%` as DimensionValue
 }
 
-/**
- * Demo board visual (grid + dots, no map SDK). Jobs are linearly projected
- * around `center` with a ±MAP_SPAN_DEG zoom; outliers clamp to the edges.
- * In `pickMode` a tap calls `onPick` with the inverse-mapped coordinates.
- */
+function generateLeafletHtml(
+  center: LatLng,
+  jobs: JobModel[],
+  pickMode: boolean,
+  pickedPoint?: LatLng | null,
+  userPosition?: LatLng | null,
+  selectedId?: string | null,
+  currentUserId?: string | null,
+) {
+  const initialLat = pickedPoint?.lat ?? userPosition?.lat ?? center.lat
+  const initialLng = pickedPoint?.lng ?? userPosition?.lng ?? center.lng
+  const initialZoom = pickMode ? 15 : 13
+
+  const validJobs = jobs.filter((j) => j.lat != null && j.lng != null)
+
+  const jobsJson = JSON.stringify(
+    validJobs.map((j) => ({
+      id: j.id,
+      title: j.title.replace(/'/g, "\\'"),
+      price: formatVnd(j.price),
+      lat: j.lat,
+      lng: j.lng,
+      isOwn: !!currentUserId && j.owner.id === currentUserId,
+      isSelected: j.id === selectedId,
+    }))
+  )
+
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #f3f4f6; }
+    #map { width: 100%; height: 100%; }
+    .user-dot {
+      width: 14px; height: 14px; background: #0d9488; border: 2.5px solid white; border-radius: 50%;
+      box-shadow: 0 0 10px rgba(13, 148, 136, 0.8);
+    }
+    .job-pin {
+      width: 24px; height: 24px; background: #0d9488; border: 2px solid white; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center; color: white; font-size: 11px; font-weight: bold;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    }
+    .job-pin.own { background: #f97316; }
+    .job-pin.selected { background: #ef4444; transform: scale(1.25); box-shadow: 0 0 10px rgba(239, 68, 68, 0.8); }
+    .pick-pin {
+      width: 28px; height: 28px; background: #ef4444; border: 2.5px solid white; border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg); box-shadow: 0 3px 8px rgba(0,0,0,0.4);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .pick-inner {
+      width: 9px; height: 9px; background: white; border-radius: 50%;
+    }
+    .leaflet-popup-content-wrapper { border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+    .leaflet-popup-content { margin: 10px 14px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    var map = L.map('map', {
+      zoomControl: true,
+      attributionControl: false
+    }).setView([${initialLat}, ${initialLng}], ${initialZoom});
+
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19
+    }).addTo(map);
+
+    var pickMode = ${pickMode ? 'true' : 'false'};
+    var pickMarker = null;
+
+    if (pickMode) {
+      var pickIcon = L.divIcon({
+        className: 'custom-pick-icon',
+        html: '<div class="pick-pin"><div class="pick-inner"></div></div>',
+        iconSize: [28, 28],
+        iconAnchor: [14, 28]
+      });
+
+      ${
+        pickedPoint
+          ? `pickMarker = L.marker([${pickedPoint.lat}, ${pickedPoint.lng}], { icon: pickIcon, draggable: true }).addTo(map);
+             pickMarker.on('dragend', function(e) {
+               var pos = e.target.getLatLng();
+               sendMsg({ type: 'pick', lat: pos.lat, lng: pos.lng });
+             });`
+          : ''
+      }
+
+      map.on('click', function(e) {
+        var lat = e.latlng.lat;
+        var lng = e.latlng.lng;
+        if (!pickMarker) {
+          pickMarker = L.marker([lat, lng], { icon: pickIcon, draggable: true }).addTo(map);
+          pickMarker.on('dragend', function(ev) {
+            var pos = ev.target.getLatLng();
+            sendMsg({ type: 'pick', lat: pos.lat, lng: pos.lng });
+          });
+        } else {
+          pickMarker.setLatLng([lat, lng]);
+        }
+        sendMsg({ type: 'pick', lat: lat, lng: lng });
+      });
+    } else {
+      ${
+        userPosition
+          ? `var userIcon = L.divIcon({
+               className: 'custom-user-icon',
+               html: '<div class="user-dot"></div>',
+               iconSize: [14, 14],
+               iconAnchor: [7, 7]
+             });
+             L.marker([${userPosition.lat}, ${userPosition.lng}], { icon: userIcon }).addTo(map).bindPopup('<b>Vị trí của bạn</b>');`
+          : ''
+      }
+
+      var jobs = ${jobsJson};
+      jobs.forEach(function(job) {
+        var pinClass = 'job-pin' + (job.isOwn ? ' own' : '') + (job.isSelected ? ' selected' : '');
+        var icon = L.divIcon({
+          className: 'custom-job-icon',
+          html: '<div class="' + pinClass + '">💼</div>',
+          iconSize: [24, 24],
+          iconAnchor: [12, 12]
+        });
+
+        var m = L.marker([job.lat, job.lng], { icon: icon }).addTo(map);
+        var popupHtml = '<div style="font-size:12px;">' +
+          '<b>' + job.title + '</b><br/>' +
+          '<span style="color:#0d9488; font-weight:bold;">' + job.price + '</span><br/>' +
+          '<button onclick="selectJob(\\'' + job.id + '\\')" style="margin-top:6px; background:#0d9488; color:white; border:none; padding:4px 8px; border-radius:6px; font-size:11px; cursor:pointer;">Xem chi tiết</button>' +
+          '</div>';
+        m.bindPopup(popupHtml);
+        m.on('click', function() {
+          sendMsg({ type: 'select', id: job.id });
+        });
+      });
+    }
+
+    function selectJob(id) {
+      sendMsg({ type: 'select', id: id });
+    }
+
+    function sendMsg(obj) {
+      if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+        window.ReactNativeWebView.postMessage(JSON.stringify(obj));
+      }
+    }
+  </script>
+</body>
+</html>
+`
+}
+
 export function JobMap({
   jobs,
   center = Q1_CENTER,
@@ -57,10 +213,11 @@ export function JobMap({
   pickMode = false,
   onPick,
   pickedPoint,
-  height = 176,
+  height = 200,
   className = '',
 }: JobMapProps) {
   const [size, setSize] = useState({ width: 0, height: 0 })
+  const [useRealMap, setUseRealMap] = useState(true)
 
   const handleLayout = (event: LayoutChangeEvent) => {
     const { width, height: layoutHeight } = event.nativeEvent.layout
@@ -71,6 +228,33 @@ export function JobMap({
     if (!pickMode || !onPick || size.width <= 0 || size.height <= 0) return
     onPick(unprojectFromPercent((x / size.width) * 100, (y / size.height) * 100, center))
   }
+
+  const handleWebViewMessage = (event: WebViewMessageEvent) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data)
+      if (data.type === 'pick' && typeof data.lat === 'number' && typeof data.lng === 'number') {
+        onPick?.({ lat: data.lat, lng: data.lng })
+      } else if (data.type === 'select' && typeof data.id === 'string') {
+        onSelectJob?.(data.id)
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  const leafletHtml = useMemo(
+    () =>
+      generateLeafletHtml(
+        center,
+        jobs,
+        pickMode,
+        pickedPoint,
+        userPosition,
+        selectedId,
+        currentUserId,
+      ),
+    [center, jobs, pickMode, pickedPoint?.lat, pickedPoint?.lng, userPosition?.lat, userPosition?.lng, selectedId, currentUserId]
+  )
 
   const markers = jobs
     .filter((job) => job.lat != null && job.lng != null)
@@ -86,6 +270,7 @@ export function JobMap({
   const you = projectToPercent(userPosition ?? center, center)
   const picked = pickedPoint ? projectToPercent(pickedPoint, center) : null
 
+  // Khung lưới mô phỏng (Grid Canvas) dùng khi offline hoặc chuyển chế độ
   const canvas = (
     <>
       <View className="absolute inset-0 opacity-40" pointerEvents="none">
@@ -144,8 +329,6 @@ export function JobMap({
               activeOpacity={0.8}
               onPress={() => onSelectJob?.(job.id)}
               hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel={`${CATEGORY_META[job.category]?.label ?? job.category}: ${job.title}`}
               className="absolute items-center justify-center"
               style={{
                 left: asPercent(left),
@@ -183,12 +366,9 @@ export function JobMap({
       </View>
 
       {pickMode && (
-        <View
-          className="absolute bottom-2 left-0 right-0 items-center"
-          pointerEvents="none"
-        >
-          <View className="bg-white/80 rounded-full px-2.5 py-1">
-            <Text className="text-[10px] font-bold text-gray-500">Chạm để chọn vị trí</Text>
+        <View className="absolute bottom-2 left-0 right-0 items-center" pointerEvents="none">
+          <View className="bg-white/90 rounded-full px-2.5 py-1 shadow">
+            <Text className="text-[10px] font-bold text-gray-600">Chạm lưới để chọn toạ độ</Text>
           </View>
         </View>
       )}
@@ -197,26 +377,44 @@ export function JobMap({
 
   const containerClass = `w-full rounded-2xl overflow-hidden border border-gray-200 bg-stone-100 relative ${className}`
 
-  if (pickMode) {
-    return (
-      <Pressable
-        onLayout={handleLayout}
-        onPress={(event) =>
-          handlePick(event.nativeEvent.locationX, event.nativeEvent.locationY)
-        }
-        accessibilityRole="button"
-        accessibilityLabel="Chạm để chọn vị trí trên bản đồ"
-        className={containerClass}
-        style={{ height }}
-      >
-        {canvas}
-      </Pressable>
-    )
-  }
-
   return (
     <View onLayout={handleLayout} className={containerClass} style={{ height }}>
-      {canvas}
+      {useRealMap ? (
+        <WebView
+          originWhitelist={['*']}
+          source={{ html: leafletHtml }}
+          onMessage={handleWebViewMessage}
+          onError={() => setUseRealMap(false)}
+          javaScriptEnabled={true}
+          domStorageEnabled={true}
+          style={{ width: '100%', height: '100%', backgroundColor: '#f3f4f6' }}
+        />
+      ) : (
+        pickMode ? (
+          <Pressable
+            onPress={(event) =>
+              handlePick(event.nativeEvent.locationX, event.nativeEvent.locationY)
+            }
+            className="w-full h-full"
+          >
+            {canvas}
+          </Pressable>
+        ) : (
+          canvas
+        )
+      )}
+
+      {/* Nút chuyển đổi giữa Bản đồ thật và Lưới mô phỏng */}
+      <TouchableOpacity
+        onPress={() => setUseRealMap(!useRealMap)}
+        activeOpacity={0.8}
+        className="absolute top-2 right-2 z-30 bg-white/90 px-2 py-1 rounded-full shadow border border-gray-200 flex-row items-center"
+      >
+        <FontAwesome name={useRealMap ? "globe" : "th"} size={10} color="#0d9488" />
+        <Text className="text-[9px] font-bold text-gray-700 ml-1">
+          {useRealMap ? "Bản đồ thật" : "Lưới"}
+        </Text>
+      </TouchableOpacity>
     </View>
   )
 }

@@ -1,7 +1,7 @@
 import { useAuth } from '../../../hooks/useAuth'
 import { Redirect } from 'expo-router'
 import { VTextInput } from '../../../components/ui/VTextInput';
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   ActivityIndicator,
   Image,
@@ -24,6 +24,7 @@ import { Category } from '../../../types'
 import { CATEGORY_META } from '../../../lib/categories'
 import { JobMap } from '../../../lib/features/jobs/components/JobMap'
 import { Q1_CENTER, type LatLng } from '../../../lib/features/jobs/geo'
+import { geocodeAddress, reverseGeocodeCoords } from '../../../lib/features/jobs/geocoding'
 import { getApiErrorMessage } from '../../../lib/features/jobs/api'
 import { colors } from '../../../constants/theme'
 
@@ -57,11 +58,44 @@ export default function PostScreen() {
   const [submitting, setSubmitting] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pickedCoords, setPickedCoords] = useState<LatLng | null>(null)
+  const [locating, setLocating] = useState(false)
+
+  useEffect(() => {
+    void requestDevicePosition()
+  }, [requestDevicePosition])
 
   const toggleLocationPicker = () => {
     const next = !pickerOpen
     setPickerOpen(next)
     if (next) void requestDevicePosition()
+  }
+
+  const handleUseCurrentLocation = async () => {
+    setLocating(true)
+    try {
+      const pos = await requestDevicePosition()
+      const target = pos ?? position
+      if (target) {
+        setPickedCoords(target)
+        const addr = await reverseGeocodeCoords(target)
+        if (addr) setLocation(addr)
+        showToast('Đã định vị vị trí hiện tại!', 'success')
+      } else {
+        showToast('Chưa lấy được GPS. Vui lòng bật định vị trên thiết bị.', 'error')
+      }
+    } catch {
+      showToast('Không thể lấy vị trí.', 'error')
+    } finally {
+      setLocating(false)
+    }
+  }
+
+  const handlePickOnMap = async (coords: LatLng) => {
+    setPickedCoords(coords)
+    const addr = await reverseGeocodeCoords(coords)
+    if (addr && (!location.trim() || location === 'Chưa có địa chỉ')) {
+      setLocation(addr)
+    }
   }
 
   const applyTemplate = (cat: Category, t: string, b: number) => {
@@ -114,15 +148,26 @@ export default function PostScreen() {
       for (const uri of images) {
         uploaded.push(await uploadImage(uri))
       }
+
+      // Tự động tìm toạ độ: Ưu tiên điểm chấm trên map -> Geocode từ chữ địa chỉ -> GPS máy -> Q1_CENTER
+      let finalCoords = pickedCoords
+      if (!finalCoords && location.trim()) {
+        finalCoords = await geocodeAddress(location.trim())
+      }
+      if (!finalCoords) {
+        finalCoords = position ?? Q1_CENTER
+      }
+
       const job = await createJob({
         title: title.trim(),
         description: description.trim(),
         category,
         price,
         locationText: location.trim(),
-        lat: pickedCoords?.lat,
-        lng: pickedCoords?.lng,
-        images: uploaded, isUrgent: urgent,
+        lat: finalCoords.lat,
+        lng: finalCoords.lng,
+        images: uploaded,
+        isUrgent: urgent,
       })
       setTitle('')
       setDescription('')
@@ -224,38 +269,60 @@ export default function PostScreen() {
         </View>
 
         <View className="space-y-1.5">
-          <View className="flex-row items-center justify-between">
+          <View className="flex-row items-center justify-between mb-1">
             <Text className="text-xs font-bold text-gray-700">Địa điểm thực hiện <Text className="text-red-500">*</Text></Text>
-            <TouchableOpacity onPress={toggleLocationPicker} hitSlop={6} className="flex-row items-center">
-              <FontAwesome name="map-o" size={11} color={colors.teal} />
-              <Text className="text-[11px] font-bold text-teal-600 ml-1">
-                {pickerOpen ? 'Ẩn bản đồ' : 'Chọn vị trí'}
-              </Text>
-            </TouchableOpacity>
+            <View className="flex-row items-center space-x-2 gap-2">
+              <TouchableOpacity
+                onPress={handleUseCurrentLocation}
+                disabled={locating}
+                hitSlop={6}
+                className="flex-row items-center bg-teal-50 px-2 py-1 rounded-lg border border-teal-200"
+              >
+                {locating ? (
+                  <ActivityIndicator size="small" color={colors.teal} style={{ transform: [{ scale: 0.6 }] }} />
+                ) : (
+                  <FontAwesome name="crosshairs" size={10} color={colors.teal} />
+                )}
+                <Text className="text-[10px] font-bold text-teal-700 ml-1">Vị trí hiện tại</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={toggleLocationPicker} hitSlop={6} className="flex-row items-center bg-gray-50 px-2 py-1 rounded-lg border border-gray-200">
+                <FontAwesome name="map-o" size={10} color={colors.teal} />
+                <Text className="text-[10px] font-bold text-teal-700 ml-1">
+                  {pickerOpen ? 'Ẩn bản đồ' : 'Bản đồ'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
           <View className="relative">
             <View className="absolute left-4 top-0 bottom-0 justify-center z-10">
               <FontAwesome name="map-marker" size={12} color={colors.grayMuted} />
             </View>
-            <VTextInput value={location} onChangeText={setLocation} placeholder="Số nhà, đường, quận..."
-              placeholderTextColor={colors.grayMuted} className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 text-sm" />
+            <VTextInput
+              value={location}
+              onChangeText={setLocation}
+              placeholder="Số nhà, đường, quận, thành phố..."
+              placeholderTextColor={colors.grayMuted}
+              className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 text-sm"
+            />
           </View>
           {pickerOpen && (
-            <View className="space-y-1.5">
+            <View className="space-y-1.5 mt-2">
               <JobMap
                 jobs={[]}
-                center={position ?? Q1_CENTER}
+                center={pickedCoords ?? position ?? Q1_CENTER}
                 userPosition={position}
                 pickMode
                 pickedPoint={pickedCoords}
-                onPick={setPickedCoords}
-                height={160}
+                onPick={handlePickOnMap}
+                height={220}
               />
-              <Text className="text-[10px] text-gray-400">
-                {pickedCoords
-                  ? `Toạ độ đã chọn: ${pickedCoords.lat.toFixed(5)}, ${pickedCoords.lng.toFixed(5)}`
-                  : 'Chạm lên bản đồ để ghim vị trí chính xác.'}
-              </Text>
+              <View className="flex-row items-center justify-between px-1">
+                <Text className="text-[11px] text-gray-500">
+                  {pickedCoords
+                    ? `📍 Toạ độ: ${pickedCoords.lat.toFixed(5)}, ${pickedCoords.lng.toFixed(5)}`
+                    : 'Chạm hoặc kéo ghim trên bản đồ để chọn toạ độ chính xác.'}
+                </Text>
+              </View>
             </View>
           )}
         </View>

@@ -109,17 +109,22 @@ export function mockListJobs(params: JobListParams = {}, viewer: MockViewer = nu
   const centerLat = params.lat
   const centerLng = params.lng
   if (centerLat != null && centerLng != null) {
-    // Mirror the API geo branch: drop jobs without coords, attach `distanceKm`
-    // (rounded to 2 decimals), filter by radius and sort nearest-first.
-    const radiusKm = params.radius ?? 5
+    const radiusKm = params.radius ?? 50
     jobs = jobs
-      .filter(
-        (job): job is JobModel & { lat: number; lng: number } =>
-          job.lat != null && job.lng != null,
-      )
-      .map((job) => ({ ...job, distanceKm: haversineKm({ lat: centerLat, lng: centerLng }, job) }))
-      .filter((job) => (job.distanceKm ?? 0) <= radiusKm)
-      .sort((a, b) => (a.distanceKm ?? 0) - (b.distanceKm ?? 0))
+      .map((job) => {
+        if (job.lat != null && job.lng != null) {
+          return { ...job, distanceKm: haversineKm({ lat: centerLat, lng: centerLng }, { lat: job.lat, lng: job.lng }) }
+        }
+        return { ...job, distanceKm: null }
+      })
+      .filter((job) => job.distanceKm == null || job.distanceKm <= radiusKm)
+      .sort((a, b) => {
+        if (a.isUrgent !== b.isUrgent) return a.isUrgent ? -1 : 1
+        if (a.distanceKm != null && b.distanceKm != null) return a.distanceKm - b.distanceKm
+        if (a.distanceKm != null) return -1
+        if (b.distanceKm != null) return 1
+        return b.createdAt.localeCompare(a.createdAt)
+      })
   } else {
     jobs = [...jobs].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   }

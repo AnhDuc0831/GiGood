@@ -79,7 +79,7 @@ public static class JobsEndpoints
 
         var pageSize = Math.Clamp(limit ?? DefaultLimit, 1, MaxLimit);
 
-        IQueryable<Job> query = db.Jobs.AsNoTracking().Include(j => j.Owner);
+        IQueryable<Job> query = db.Jobs.AsNoTracking().Include(j => j.Owner).Include(j => j.Images);
 
         // Task 12a: admin-hidden jobs never appear in the list/geo board (owner included).
         query = query.Where(j => !j.Hidden);
@@ -151,9 +151,9 @@ public static class JobsEndpoints
         var lngDelta = radiusKm / (111.32 * Math.Max(Math.Cos(ToRadians(centerLat)), 0.01));
 
         query = query.Where(j =>
-            j.Lat != null && j.Lng != null
-            && j.Lat >= centerLat - latDelta && j.Lat <= centerLat + latDelta
-            && j.Lng >= centerLng - lngDelta && j.Lng <= centerLng + lngDelta);
+            (j.Lat == null || j.Lng == null) ||
+            (j.Lat >= centerLat - latDelta && j.Lat <= centerLat + latDelta
+            && j.Lng >= centerLng - lngDelta && j.Lng <= centerLng + lngDelta));
 
         var candidates = await query
             .OrderByDescending(j => j.IsUrgent)
@@ -163,14 +163,15 @@ public static class JobsEndpoints
             .ToListAsync(ct);
 
         var jobs = candidates
-            .Select(j => (Job: j, DistanceKm: HaversineKm(centerLat, centerLng, j.Lat!.Value, j.Lng!.Value)))
-            .Where(x => x.DistanceKm <= radiusKm)
+            .Select(j => (Job: j, DistanceKm: (j.Lat != null && j.Lng != null) ? (double?)HaversineKm(centerLat, centerLng, j.Lat.Value, j.Lng.Value) : null))
+            .Where(x => x.DistanceKm == null || x.DistanceKm.Value <= radiusKm)
             .OrderByDescending(x => x.Job.IsUrgent)
-            .ThenBy(x => x.DistanceKm)
+            .ThenBy(x => x.DistanceKm.HasValue ? 0 : 1)
+            .ThenBy(x => x.DistanceKm ?? double.MaxValue)
             .ThenByDescending(x => x.Job.CreatedAt)
             .ThenByDescending(x => x.Job.Id)
             .Take(pageSize)
-            .Select(x => ToDto(x.Job, Math.Round(x.DistanceKm, 2)))
+            .Select(x => ToDto(x.Job, x.DistanceKm.HasValue ? Math.Round(x.DistanceKm.Value, 2) : null))
             .ToList();
 
         return TypedResults.Ok(new JobListResponse(jobs, NextCursor: null));
@@ -395,7 +396,10 @@ public static class JobsEndpoints
 
         try
         {
-            var job = await db.Jobs.SingleOrDefaultAsync(j => j.Id == id, ct);
+            var job = await db.Jobs
+                .Include(j => j.Owner)
+                .Include(j => j.Images)
+                .SingleOrDefaultAsync(j => j.Id == id, ct);
             if (job is null)
             {
                 return TypedResults.NotFound(new ErrorResponse("Không tìm thấy công việc."));
@@ -414,8 +418,10 @@ public static class JobsEndpoints
             var taskerWallet = await db.Wallets.SingleOrDefaultAsync(w => w.UserId == userId.Value, ct);
             if (taskerWallet is null)
             {
-                return TypedResults.Conflict(new ErrorResponse("Ví của bạn không tồn tại."));
+                taskerWallet = new Api.Features.Wallet.Wallet { UserId = userId.Value, Balance = 0 };
+                db.Wallets.Add(taskerWallet);
             }
+
 
             var fee = Math.Max(1m, job.Price / 1000m); // e.g. 200,000 => 200 tokens
             
@@ -495,6 +501,10 @@ public static class JobsEndpoints
         {
             // Unique Escrows(JobId): the other concurrent accept won.
             return Conflict("Công việc vừa được người khác nhận.");
+        }
+        catch (Exception ex)
+        {
+            return TypedResults.Problem(statusCode: StatusCodes.Status500InternalServerError, detail: $"Lỗi xử lý nhận việc: {ex.Message}");
         }
     }
 
@@ -578,7 +588,10 @@ public static class JobsEndpoints
             return TypedResults.Unauthorized();
         }
 
-        var job = await db.Jobs.SingleOrDefaultAsync(j => j.Id == id, ct);
+        var job = await db.Jobs
+            .Include(j => j.Owner)
+            .Include(j => j.Images)
+            .SingleOrDefaultAsync(j => j.Id == id, ct);
         if (job is null)
         {
             return TypedResults.NotFound(new ErrorResponse("Không tìm thấy công việc."));
@@ -637,7 +650,10 @@ public static class JobsEndpoints
             return TypedResults.Unauthorized();
         }
 
-        var job = await db.Jobs.SingleOrDefaultAsync(j => j.Id == id, ct);
+        var job = await db.Jobs
+            .Include(j => j.Owner)
+            .Include(j => j.Images)
+            .SingleOrDefaultAsync(j => j.Id == id, ct);
         if (job is null)
         {
             return TypedResults.NotFound(new ErrorResponse("Không tìm thấy công việc."));
@@ -700,7 +716,10 @@ public static class JobsEndpoints
             return TypedResults.Unauthorized();
         }
 
-        var job = await db.Jobs.SingleOrDefaultAsync(j => j.Id == id, ct);
+        var job = await db.Jobs
+            .Include(j => j.Owner)
+            .Include(j => j.Images)
+            .SingleOrDefaultAsync(j => j.Id == id, ct);
         if (job is null)
         {
             return TypedResults.NotFound(new ErrorResponse("Không tìm thấy công việc."));
@@ -739,7 +758,9 @@ public static class JobsEndpoints
 
     private static JobDto ToDto(Job job, double? distanceKm = null) => new(
         job.Id,
-        new JobOwnerDto(job.Owner.Id, job.Owner.Name, job.Owner.AvatarUrl, job.Owner.RatingAvg),
+        job.Owner != null
+            ? new JobOwnerDto(job.Owner.Id, job.Owner.Name, job.Owner.AvatarUrl, job.Owner.RatingAvg)
+            : new JobOwnerDto(job.OwnerId, string.Empty, null, 0),
         job.Title,
         job.Description,
         job.Category,
@@ -750,7 +771,7 @@ public static class JobsEndpoints
         job.Lng,
         distanceKm,
         job.LocationText,
-        job.Images.Select(image => image.Url).ToList(),
+        job.Images != null ? job.Images.Select(image => image.Url).ToList() : [],
         job.IsUrgent,
         job.CreatedAt,
         job.UpdatedAt);
