@@ -4,6 +4,8 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   Text,
   TextInput,
@@ -19,6 +21,7 @@ import { useChat } from '../../../hooks/useChat'
 import { useJobEscrow } from '../../../hooks/useWallet'
 import { useAuth } from '../../../hooks/useAuth'
 import { useUi } from '../../../hooks/useUi'
+import { useKeyboard } from '../../../hooks/useKeyboard'
 import { formatVnd } from '../../../lib/format'
 import { CATEGORY_META } from '../../../lib/categories'
 import { StatusBadge } from '../../../components/ui/StatusBadge'
@@ -41,6 +44,7 @@ export default function JobDetailScreen() {
   const queryClient = useQueryClient()
   const { profile } = useAuth()
   const { showToast } = useUi()
+  const { keyboardHeight, isKeyboardVisible } = useKeyboard()
   const { job, loading } = useJob(jobId)
   const {
     updateJob,
@@ -318,7 +322,18 @@ export default function JobDetailScreen() {
         <StatusBadge status={job.status} />
       </View>
 
-      <ScrollView className="flex-1 px-4 py-4" contentContainerStyle={{ paddingBottom: 32 }}>
+      <KeyboardAvoidingView
+        className="flex-1"
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      >
+        <ScrollView
+          className="flex-1 px-4 py-4"
+          contentContainerStyle={{ paddingBottom: isKeyboardVisible ? keyboardHeight + 80 : 120 }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          showsVerticalScrollIndicator={false}
+        >
         {job.images.length > 0 && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4">
             {job.images.map(url => (
@@ -563,6 +578,7 @@ export default function JobDetailScreen() {
           </View>
         )}
       </ScrollView>
+      </KeyboardAvoidingView>
 
       <RatingSheet
         visible={!!ratingJobId}

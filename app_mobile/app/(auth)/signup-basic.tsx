@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { FontAwesome } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
 import { useAuth } from '../../hooks/useAuth'
+import { useKeyboard } from '../../hooks/useKeyboard'
 import { useGiGood } from '../../lib/GiGoodContext'
 import { colors } from '../../constants/theme'
 import { useState } from 'react'
@@ -22,6 +23,7 @@ export default function SignupBasicScreen() {
   const router = useRouter()
   const { dispatch } = useGiGood()
   const { pendingSignupRole, signUpSeeker } = useAuth()
+  const { keyboardHeight, isKeyboardVisible } = useKeyboard()
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
@@ -68,11 +70,14 @@ export default function SignupBasicScreen() {
 
       <KeyboardAvoidingView
         className="flex-1"
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
       >
         <ScrollView
           className="flex-1 px-5 py-6"
-          contentContainerStyle={{ paddingBottom: 40 }}
+          contentContainerStyle={{ paddingBottom: isKeyboardVisible ? keyboardHeight + 40 : 120 }}
+          keyboardDismissMode="on-drag"
+          showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
         <View className="flex-row space-x-1.5 mb-6">

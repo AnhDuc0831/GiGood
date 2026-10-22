@@ -18,6 +18,7 @@ import { useRouter } from 'expo-router'
 import { useQueryClient } from '@tanstack/react-query'
 import * as ImagePicker from 'expo-image-picker'
 import { useJobs } from '../../../hooks/useJobs'
+import { useKeyboard } from '../../../hooks/useKeyboard'
 import { useDeviceLocation } from '../../../hooks/useDeviceLocation'
 import { useUi } from '../../../hooks/useUi'
 import { Category } from '../../../types'
@@ -48,6 +49,7 @@ export default function PostScreen() {
   const { position, request: requestDevicePosition } = useDeviceLocation()
   const router = useRouter()
   const queryClient = useQueryClient()
+  const { keyboardHeight, isKeyboardVisible } = useKeyboard()
   const [title, setTitle] = useState('')
   const [category, setCategory] = useState<Category>('repair')
   const [description, setDescription] = useState('')
@@ -192,13 +194,15 @@ export default function PostScreen() {
   return (
     <KeyboardAvoidingView
       className="flex-1"
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
       <ScrollView
         className="flex-1 px-4 py-4"
-        contentContainerStyle={{ paddingBottom: 32 }}
+        contentContainerStyle={{ paddingBottom: isKeyboardVisible ? keyboardHeight + 80 : 160 }}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        showsVerticalScrollIndicator={false}
       >
         <View className="mb-4">
         <Text className="text-lg font-extrabold text-gray-800">Đăng việc mới</Text>

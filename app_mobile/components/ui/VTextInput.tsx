@@ -1,11 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, forwardRef } from 'react';
 import { TextInput, TextInputProps } from 'react-native';
 
 interface Props extends Omit<TextInputProps, 'value'> {
   value?: string;
 }
 
-export function VTextInput({ value, onChangeText, ...props }: Props) {
+export const VTextInput = forwardRef<TextInput, Props>(function VTextInput(
+  { value, onChangeText, ...props }: Props,
+  ref
+) {
   const [internalValue, setInternalValue] = useState(value ?? '');
 
   useEffect(() => {
@@ -16,6 +19,7 @@ export function VTextInput({ value, onChangeText, ...props }: Props) {
 
   return (
     <TextInput
+      ref={ref}
       {...props}
       value={internalValue}
       onChangeText={(text) => {
@@ -26,4 +30,4 @@ export function VTextInput({ value, onChangeText, ...props }: Props) {
       }}
     />
   );
-}
+});

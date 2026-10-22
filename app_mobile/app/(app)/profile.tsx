@@ -16,6 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { FormField } from "../../components/ui/FormField";
 import { ModalSheet } from "../../components/ui/ModalSheet";
 import { useAuth } from "../../hooks/useAuth";
+import { useKeyboard } from "../../hooks/useKeyboard";
 import { useUserRating } from "../../hooks/useRatings";
 import { useUi } from "../../hooks/useUi";
 import { useWallet } from "../../hooks/useWallet";
@@ -51,6 +52,7 @@ export default function ProfileScreen() {
   } = useProfile();
   const { showToast } = useUi();
   const router = useRouter();
+  const { keyboardHeight, isKeyboardVisible } = useKeyboard();
 
   const p = loadedProfile ?? authProfile;
 
@@ -172,12 +174,14 @@ export default function ProfileScreen() {
 
       <KeyboardAvoidingView
         className="flex-1"
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
         keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
       >
         <ScrollView
           className="flex-1 px-5 py-6"
-          contentContainerStyle={{ paddingBottom: 40 }}
+          contentContainerStyle={{ paddingBottom: isKeyboardVisible ? keyboardHeight + 80 : 160 }}
+          keyboardDismissMode="on-drag"
+          showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
         {/* Avatar + identity */}
