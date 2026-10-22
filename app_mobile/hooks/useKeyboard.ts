@@ -8,10 +8,12 @@ export function useKeyboard() {
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow'
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide'
+    const changeEvent = Platform.OS === 'ios' ? 'keyboardWillChangeFrame' : 'keyboardDidChangeFrame'
 
     const onShow = (e: KeyboardEvent) => {
-      setKeyboardHeight(e.endCoordinates?.height || 0)
-      setIsKeyboardVisible(true)
+      const h = e?.endCoordinates?.height || 0
+      setKeyboardHeight(h)
+      setIsKeyboardVisible(h > 0)
     }
 
     const onHide = () => {
@@ -21,10 +23,12 @@ export function useKeyboard() {
 
     const showSub = Keyboard.addListener(showEvent, onShow)
     const hideSub = Keyboard.addListener(hideEvent, onHide)
+    const changeSub = Keyboard.addListener(changeEvent, onShow)
 
     return () => {
       showSub.remove()
       hideSub.remove()
+      changeSub.remove()
     }
   }, [])
 

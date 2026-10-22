@@ -4,31 +4,38 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
-  KeyboardAvoidingView,
+  LayoutAnimation,
   Platform,
   Text,
-  TextInput,
   TouchableOpacity,
+  UIManager,
   View,
 } from 'react-native'
 import { FontAwesome } from '@expo/vector-icons'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ChatBubble } from '../../../components/ui/ChatBubble'
 import { EmptyState } from '../../../components/shared/EmptyState'
 import { LoadingSpinner } from '../../../components/shared/LoadingSpinner'
 import { useChat, type ChatMessage } from '../../../hooks/useChat'
 import { useAuth } from '../../../hooks/useAuth'
 import { useUi } from '../../../hooks/useUi'
+import { useKeyboard } from '../../../hooks/useKeyboard'
 import { getApiErrorMessage, resolveImageUrl } from '../../../lib/features/jobs/api'
 import { colors } from '../../../constants/theme'
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true)
+}
 
 export default function ChatDetailScreen() {
   const { id, jobId: jobIdParam } = useLocalSearchParams<{ id?: string; jobId?: string }>()
   const conversationId = typeof id === 'string' && id.length > 0 ? id : undefined
   const router = useRouter()
+  const insets = useSafeAreaInsets()
   const { currentRole } = useAuth()
   const { showToast } = useUi()
+  const { keyboardHeight, isKeyboardVisible } = useKeyboard()
   const {
     conversation,
     messages,
@@ -47,6 +54,21 @@ export default function ChatDetailScreen() {
   const [text, setText] = useState('')
 
   const lastMessageId = messages.length > 0 ? messages[messages.length - 1].id : null
+
+  // Animate layout when keyboard appears or disappears
+  useEffect(() => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut)
+  }, [keyboardHeight, isKeyboardVisible])
+
+  // Auto-scroll when keyboard opens
+  useEffect(() => {
+    if (isKeyboardVisible && messages.length > 0) {
+      const timer = setTimeout(() => {
+        listRef.current?.scrollToEnd({ animated: true })
+      }, 100)
+      return () => clearTimeout(timer)
+    }
+  }, [isKeyboardVisible, keyboardHeight, messages.length])
 
   // Auto-scroll 100ms after the tail changes; older pages (load more) keep the
   // last id, so reading history does not yank the list back down.
@@ -80,12 +102,10 @@ export default function ChatDetailScreen() {
     )
   }
 
+  const bottomPadding = isKeyboardVisible ? Math.max(0, keyboardHeight - insets.bottom) : 0
+
   return (
-    <KeyboardAvoidingView
-      className="flex-1 bg-stone-50"
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-    >
+    <View className="flex-1 bg-stone-50" style={{ paddingBottom: bottomPadding }}>
       <View className="px-3 py-3 border-b border-gray-200 flex-row items-center bg-white">
         <TouchableOpacity
           onPress={() => router.back()}
@@ -129,6 +149,8 @@ export default function ChatDetailScreen() {
           keyExtractor={(item) => item.id}
           className="flex-1 bg-stone-50"
           contentContainerClassName="p-4 pb-2"
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           ListHeaderComponent={
             hasMore ? (
               <TouchableOpacity
@@ -198,6 +220,6 @@ export default function ChatDetailScreen() {
           )}
         </TouchableOpacity>
       </View>
-    </KeyboardAvoidingView>
+    </View>
   )
 }
