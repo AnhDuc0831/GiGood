@@ -1,6 +1,7 @@
 using System.Text;
 using Api.Data;
 using Api.Features.Admin;
+using Api.Features.Ai;
 using Api.Features.Auth;
 using Api.Features.Chat;
 using Api.Features.Escrows;
@@ -128,6 +129,10 @@ builder.Services.AddScoped<ReviewService>();
 // ---------------------------------------------------------------------------
 builder.Services.AddScoped<EscrowLedgerService>();
 
+// Gemini AI Chatbox & Assistant
+builder.Services.AddSingleton<GeminiClient>();
+builder.Services.AddScoped<AiAssistantService>();
+
 // ---------------------------------------------------------------------------
 // SignalR (in-box). Hubs are mapped below.
 // ---------------------------------------------------------------------------
@@ -238,6 +243,9 @@ app.MapEscrowsEndpoints();
 
 // Task 07: /api/ratings + /api/users/{id}/rating.
 app.MapRatingsEndpoints();
+
+// AI Assistant endpoints
+app.MapAiEndpoints();
 
 // Task 12a: /api/admin/* (Admin policy — is_admin claim).
 app.MapAdminEndpoints();

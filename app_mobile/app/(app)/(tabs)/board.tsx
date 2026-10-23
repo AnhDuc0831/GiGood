@@ -16,6 +16,7 @@ import { getApiErrorMessage } from '../../../lib/features/jobs/api'
 import { useCart } from '../../../lib/features/wallet/context/CartContext'
 import { RegistrationProgressBar } from '../../../components/ui/RegistrationProgressBar'
 import { colors } from '../../../constants/theme'
+import { useAi } from '../../../lib/features/ai/context/AiContext'
 import type { JobModel } from '../../../lib/features/jobs/types'
 
 export default function BoardScreen() {
@@ -34,6 +35,7 @@ export default function BoardScreen() {
   const [selectionMode, setSelectionMode] = useState(false)
   const [checkingOut, setCheckingOut] = useState(false)
   const { count, has, toggle, clear } = useCart()
+  const { openAi } = useAi()
 
   // GPS is best-effort: the map/list start on the Q1 center and recenter
   // (refetch by query key) as soon as the device position resolves.
@@ -199,6 +201,29 @@ export default function BoardScreen() {
                 Gợi ý theo vị trí GPS & kỹ năng phù hợp với hồ sơ của bạn
               </Text>
             </View>
+
+            {/* AI Smart Search Banner for Tasker */}
+            <TouchableOpacity
+              onPress={() => openAi('Tìm việc máy tính và IT phù hợp')}
+              className="bg-teal-50 border border-teal-200 rounded-2xl p-3 mb-4 flex-row items-center justify-between"
+            >
+              <View className="flex-row items-center space-x-2.5 flex-1 mr-2">
+                <View className="w-8 h-8 rounded-xl bg-teal-600 items-center justify-center">
+                  <FontAwesome name="magic" size={13} color="white" />
+                </View>
+                <View className="flex-1">
+                  <Text className="text-xs font-extrabold text-teal-900">
+                    ✨ AI Gợi ý việc thông minh
+                  </Text>
+                  <Text className="text-[10px] text-teal-700">
+                    Dùng ngôn ngữ tự nhiên để lọc việc theo kỹ năng của bạn
+                  </Text>
+                </View>
+              </View>
+              <View className="bg-teal-600 px-2.5 py-1.5 rounded-xl">
+                <Text className="text-white text-[10px] font-bold">Tìm ngay</Text>
+              </View>
+            </TouchableOpacity>
 
             <JobMap
               jobs={jobs}

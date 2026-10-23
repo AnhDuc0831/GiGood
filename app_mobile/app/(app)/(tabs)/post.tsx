@@ -28,6 +28,7 @@ import { Q1_CENTER, type LatLng } from '../../../lib/features/jobs/geo'
 import { geocodeAddress, reverseGeocodeCoords } from '../../../lib/features/jobs/geocoding'
 import { getApiErrorMessage } from '../../../lib/features/jobs/api'
 import { colors } from '../../../constants/theme'
+import { useAi } from '../../../lib/features/ai/context/AiContext'
 
 const TEMPLATES: { cat: Category; title: string; budget: number; desc: string }[] = [
   {
@@ -78,6 +79,19 @@ export default function PostScreen() {
 
   const { createJob, uploadImage } = useJobs()
   const { showToast } = useUi()
+  const { openAi, activeDraft, clearDraft } = useAi()
+
+  useEffect(() => {
+    if (activeDraft) {
+      setTitle(activeDraft.title)
+      setCategory(activeDraft.category)
+      setDescription(activeDraft.description)
+      setBudget(String(activeDraft.estimatedPrice))
+      setUrgent(activeDraft.isUrgent)
+      clearDraft()
+      showToast('Đã điền tự động nội dung từ GiGood AI!', 'success')
+    }
+  }, [activeDraft, clearDraft, showToast])
   const { position, request: requestDevicePosition } = useDeviceLocation()
   const router = useRouter()
   const queryClient = useQueryClient()
@@ -243,6 +257,29 @@ export default function PostScreen() {
         <Text className="text-lg font-extrabold text-gray-800">Đăng việc mới</Text>
         <Text className="text-xs text-gray-500">Mô tả rõ để Tasker phù hợp nhất nhận việc nhanh hơn</Text>
       </View>
+
+      {/* AI Assistant Banner */}
+      <TouchableOpacity
+        onPress={() => openAi('Code bài tập C#')}
+        className="bg-orange-50/80 border border-orange-200 rounded-2xl p-3 mb-4 flex-row items-center justify-between"
+      >
+        <View className="flex-row items-center space-x-2.5 flex-1 mr-2">
+          <View className="w-8 h-8 rounded-xl bg-orange-500 items-center justify-center">
+            <FontAwesome name="magic" size={13} color="white" />
+          </View>
+          <View className="flex-1">
+            <Text className="text-xs font-extrabold text-orange-950">
+              ✨ Trợ lý AI: Tự động viết & điền bài đăng
+            </Text>
+            <Text className="text-[10px] text-orange-800 mt-0.5">
+              Nhập yêu cầu (ví dụ: Code bài tập C#), AI sẽ tự tạo mô tả và điền form cho bạn!
+            </Text>
+          </View>
+        </View>
+        <View className="bg-orange-500 px-3 py-1.5 rounded-xl">
+          <Text className="text-white text-[11px] font-bold">Thử ngay</Text>
+        </View>
+      </TouchableOpacity>
 
       <View className="space-y-2 mb-4">
         <Text className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">Mẫu việc nhanh cho học sinh, sinh viên</Text>

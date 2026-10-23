@@ -10,6 +10,7 @@ import { useWallet } from "../../hooks/useWallet";
 import { SegmentedToggle } from "../../components/ui/SegmentedToggle";
 import type { Role } from "../../types";
 import { CartProvider } from "../../lib/features/wallet/context/CartContext";
+import { AiProvider, useAi } from "../../lib/features/ai/context/AiContext";
 import { connectChatHub } from "../../lib/features/chat/hub";
 import { connectNotificationHub } from "../../lib/features/notifications/hub";
 import { formatNotificationTime } from "../../lib/features/notifications/format";
@@ -18,7 +19,8 @@ import { colors } from "../../constants/theme";
 import { useGiGood } from "../../lib/GiGoodContext";
 import { BonusPopup } from "../../components/modals/BonusPopup";
 
-export default function AppLayout() {
+function AppLayoutContent() {
+  const { openAi } = useAi();
   const { profile, currentRole, switchRole } = useAuth();
   const { balance, escrowHeld, isSeeker } = useWallet();
   const { notifications, unreadCount, clear } = useNotifications();
@@ -73,8 +75,7 @@ export default function AppLayout() {
   };
 
   return (
-    <CartProvider>
-      <SafeAreaView className="flex-1 bg-stone-50">
+    <SafeAreaView className="flex-1 bg-stone-50">
       {/* Sticky Header */}
       <View className="bg-white border-b border-gray-200 px-4 pb-3 relative z-30">
         {/* Top row */}
@@ -90,6 +91,15 @@ export default function AppLayout() {
             </Text>
           </View>
           <View className="flex-row items-center space-x-2">
+            <TouchableOpacity
+              onPress={() => openAi()}
+              accessibilityRole="button"
+              accessibilityLabel="Trợ lý GiGood AI"
+              className="h-9 px-2.5 rounded-xl bg-orange-50 border border-orange-200 flex-row items-center space-x-1"
+            >
+              <FontAwesome name="magic" size={13} color={colors.orange} />
+              <Text className="text-[11px] font-bold text-orange-600 ml-1">AI</Text>
+            </TouchableOpacity>
             <TouchableOpacity
               onPress={toggleNotif}
               accessibilityRole="button"
@@ -231,6 +241,15 @@ export default function AppLayout() {
         onClose={() => dispatch({ type: 'HIDE_BONUS_POPUP' })} 
       />
       </SafeAreaView>
+  );
+}
+
+export default function AppLayout() {
+  return (
+    <CartProvider>
+      <AiProvider>
+        <AppLayoutContent />
+      </AiProvider>
     </CartProvider>
   );
 }
