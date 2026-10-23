@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Api.Features.Chat;
 
 // Task 06 participant rule: the job owner, the accepted escrow payee (Held/Released),
-// or anyone while the job is still Open (pre-assignment browsing rule stays).
+// or the worker who applied for/accepted the job, or anyone while the job is still Open.
 internal static class ChatAccess
 {
     public static async Task<bool> CanParticipateAsync(
@@ -26,6 +26,10 @@ internal static class ChatAccess
             e => e.JobId == jobId
                 && e.PayeeId == userId
                 && (e.Status == EscrowStatus.Held || e.Status == EscrowStatus.Released),
+            ct)
+            || await db.JobApplications.AnyAsync(
+            a => a.JobId == jobId
+                && a.WorkerId == userId,
             ct);
     }
 }

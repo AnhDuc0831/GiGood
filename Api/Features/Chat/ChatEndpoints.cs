@@ -119,6 +119,7 @@ public static class ChatEndpoints
             .Where(c => c.Job.OwnerId == userId
                 || db.Escrows.Any(e => e.JobId == c.JobId && e.PayeeId == userId
                     && (e.Status == EscrowStatus.Held || e.Status == EscrowStatus.Released))
+                || db.JobApplications.Any(a => a.JobId == c.JobId && a.WorkerId == userId)
                 || (c.Job.Status == JobStatus.Open
                     && (c.Messages.Any(m => m.SenderId == userId)
                         || !c.Messages.Any(m => m.SenderId != c.Job.OwnerId))))
@@ -149,6 +150,21 @@ public static class ChatEndpoints
                     .ThenByDescending(m => m.Id)
                     .Select(m => new ConversationPeerDto(m.Sender.Id, m.Sender.Name, m.Sender.AvatarUrl))
                     .FirstOrDefaultAsync(ct);
+
+                if (peer is null)
+                {
+                    var worker = await db.JobApplications.AsNoTracking()
+                        .Where(a => a.JobId == conversation.JobId)
+                        .OrderByDescending(a => a.Status == "Done" || a.Status == "Accepted" ? 1 : 0)
+                        .ThenByDescending(a => a.CreatedAt)
+                        .Select(a => a.Worker)
+                        .FirstOrDefaultAsync(ct);
+
+                    if (worker is not null)
+                    {
+                        peer = new ConversationPeerDto(worker.Id, worker.Name, worker.AvatarUrl);
+                    }
+                }
             }
 
             rows.Add((conversation, lastMessage, peer));

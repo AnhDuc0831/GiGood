@@ -8,7 +8,9 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
+import { useRouter } from 'expo-router'
 import { useAuth } from '../../../hooks/useAuth'
+import { useChat } from '../../../hooks/useChat'
 import { useJobs } from '../../../hooks/useJobs'
 import { useEscrows } from '../../../hooks/useWallet'
 import { useUi } from '../../../hooks/useUi'
@@ -25,6 +27,8 @@ export default function HistoryScreen() {
   const { currentRole, profile } = useAuth()
   const isSeeker = currentRole === 'seeker'
   const isTasker = currentRole === 'tasker'
+  const router = useRouter()
+  const { openConversation } = useChat()
 
   const { jobs: doneJobs, loading, refreshing, refetch, releaseEscrow } = useJobs({
     mine: true,
@@ -72,6 +76,18 @@ export default function HistoryScreen() {
 
   const handleRefresh = async () => {
     await Promise.all([refetch(), refetchActive(), refetchEscrows()])
+  }
+
+  const handleOpenChat = async (job: JobModel) => {
+    try {
+      const conversationId = await openConversation(job.id)
+      router.push({
+        pathname: '/(app)/chat/[id]',
+        params: { id: conversationId, jobId: job.id },
+      })
+    } catch (error) {
+      showToast(getApiErrorMessage(error, 'Không thể mở cuộc trò chuyện.'), 'error')
+    }
   }
 
   const confirmRelease = async (job: JobModel) => {
@@ -163,6 +179,16 @@ export default function HistoryScreen() {
                 </Text>
                 <Text className="font-bold text-amber-600">{formatVnd(job.price)}</Text>
               </View>
+
+              <View className="flex-row gap-2 mt-1">
+                <TouchableOpacity
+                  onPress={() => void handleOpenChat(job)}
+                  className="flex-1 bg-stone-100 py-2 rounded-xl items-center"
+                >
+                  <Text className="text-gray-600 text-xs font-bold">Trò chuyện</Text>
+                </TouchableOpacity>
+              </View>
+
               {isSeeker ? (
                 renderReleaseButton(job)
               ) : (
@@ -219,6 +245,16 @@ export default function HistoryScreen() {
                   {formatVnd(escrow?.amount ?? job.price)}
                 </Text>
               </View>
+
+              <View className="flex-row gap-2 mt-1">
+                <TouchableOpacity
+                  onPress={() => void handleOpenChat(job)}
+                  className="flex-1 bg-stone-100 py-2 rounded-xl items-center"
+                >
+                  <Text className="text-gray-600 text-xs font-bold">Trò chuyện</Text>
+                </TouchableOpacity>
+              </View>
+
               <JobRatingBlock
                 jobId={job.id}
                 canRate={isOwner || isPayee}

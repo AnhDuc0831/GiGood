@@ -41,7 +41,9 @@ public sealed class ReviewService(ILogger<ReviewService> logger)
         }
 
         return await db.JobApplications.AsNoTracking()
-            .Where(a => a.JobId == jobId && (a.Status == "Accepted" || a.Status == "Done"))
+            .Where(a => a.JobId == jobId)
+            .OrderByDescending(a => a.Status == "Done" || a.Status == "Accepted" ? 1 : 0)
+            .ThenByDescending(a => a.CreatedAt)
             .Select(a => (Guid?)a.WorkerId)
             .FirstOrDefaultAsync(ct);
     }
@@ -52,8 +54,7 @@ public sealed class ReviewService(ILogger<ReviewService> logger)
             && (db.Jobs.Any(j => j.Id == r.JobId && j.OwnerId == userId)
                 || db.Escrows.Any(e => e.JobId == r.JobId && e.PayeeId == userId
                     && (e.Status == EscrowStatus.Held || e.Status == EscrowStatus.Released))
-                || db.JobApplications.Any(a => a.JobId == r.JobId && a.WorkerId == userId
-                    && (a.Status == "Accepted" || a.Status == "Done"))));
+                || db.JobApplications.Any(a => a.JobId == r.JobId && a.WorkerId == userId)));
 
     public async Task<ReviewCreateResult> CreateAsync(
         AppDbContext db,
@@ -69,9 +70,9 @@ public sealed class ReviewService(ILogger<ReviewService> logger)
             return new ReviewCreateResult(ReviewCreateStatus.JobNotFound);
         }
 
-        var payeeId = await GetPayeeIdAsync(db, jobId, ct);
         var isOwner = job.OwnerId == reviewerId;
-        var isPayee = payeeId == reviewerId;
+        var isPayee = await db.JobApplications.AsNoTracking().AnyAsync(a => a.JobId == jobId && a.WorkerId == reviewerId, ct)
+            || await db.Escrows.AsNoTracking().AnyAsync(e => e.JobId == jobId && e.PayeeId == reviewerId, ct);
 
         if (!isOwner && !isPayee)
         {
@@ -84,7 +85,16 @@ public sealed class ReviewService(ILogger<ReviewService> logger)
             return new ReviewCreateResult(ReviewCreateStatus.JobNotDone);
         }
 
-        var revieweeId = isOwner ? payeeId : job.OwnerId;
+        Guid? revieweeId;
+        if (isOwner)
+        {
+            revieweeId = await GetPayeeIdAsync(db, jobId, ct);
+        }
+        else
+        {
+            revieweeId = job.OwnerId;
+        }
+
         if (revieweeId is null || revieweeId == reviewerId)
         {
             return new ReviewCreateResult(ReviewCreateStatus.SelfReview);
