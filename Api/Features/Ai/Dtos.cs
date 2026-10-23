@@ -11,7 +11,8 @@ public sealed record JobDraftDto(
     string Category,
     string Description,
     decimal EstimatedPrice,
-    bool IsUrgent);
+    bool IsUrgent,
+    string? LocationText = null);
 
 public sealed record JobRecommendationDto(
     Guid Id,
@@ -28,7 +29,8 @@ public sealed record TaskerRecommendationDto(
     double RatingAvg,
     List<string> Skills,
     string? Bio,
-    string MatchReason);
+    string MatchReason,
+    Guid? JobId = null);
 
 public sealed record AiChatResponse(
     string Reply,

@@ -188,6 +188,7 @@ NHIỆM VỤ CỦA BẠN (RẤT QUAN TRỌNG):
    - description: Viết thật chi tiết, nêu rõ nội dung bài tập/công việc, yêu cầu kiến thức (ví dụ OOP, clean code), giải thích logic và hướng dẫn chạy chương trình
    - estimatedPrice: Mức giá thù lao gợi ý phù hợp (số nguyên VNĐ, ví dụ 100000)
    - isUrgent: boolean (true nếu việc cần gấp)
+   - locationText: Nếu trong yêu cầu có nhắc đến địa chỉ/địa điểm (ví dụ: '289, Nguyễn Hồng Ánh, Hoà Xuân' hoặc 'KTX Khu B', 'Quận 1'...), hãy trích xuất và tự động điền địa chỉ hoàn thiện (bổ sung quận/huyện, thành phố còn thiếu; ví dụ: '289, Nguyễn Hồng Ánh, Hoà Xuân' -> '289 Nguyễn Hồng Ánh, Hoà Xuân, Đà Nẵng'). Nếu không có địa chỉ cụ thể thì trả về null hoặc chuỗi rỗng.
    - reply: Lời giải thích ngắn gọn, thân thiện bằng tiếng Việt gửi tới người dùng.
 
 YÊU CẦU OUTPUT:
@@ -198,7 +199,8 @@ Trả về duy nhất JSON thuần (KHÔNG dùng markdown ```json, KHÔNG có v�
   ""category"": ""helper"",
   ""description"": ""..."",
   ""estimatedPrice"": 100000,
-  ""isUrgent"": false
+  ""isUrgent"": false,
+  ""locationText"": ""289 Nguyễn Hồng Ánh, Hoà Xuân, Đà Nẵng""
 }}";
 
         var raw = await _gemini.GenerateTextAsync(prompt, temperature: 0.2, maxTokens: 1024, ct: ct);
@@ -213,7 +215,8 @@ Trả về duy nhất JSON thuần (KHÔNG dùng markdown ```json, KHÔNG có v�
                 Category: cat,
                 Description: res.Description ?? userPrompt,
                 EstimatedPrice: res.EstimatedPrice > 0 ? res.EstimatedPrice : 100000,
-                IsUrgent: res.IsUrgent);
+                IsUrgent: res.IsUrgent,
+                LocationText: !string.IsNullOrWhiteSpace(res.LocationText) ? res.LocationText.Trim() : null);
 
             var reply = !string.IsNullOrWhiteSpace(res.Reply)
                 ? res.Reply
@@ -234,7 +237,8 @@ Trả về duy nhất JSON thuần (KHÔNG dùng markdown ```json, KHÔNG có v�
         string? Category,
         string? Description,
         decimal EstimatedPrice,
-        bool IsUrgent);
+        bool IsUrgent,
+        string? LocationText = null);
 
     private async Task<AiChatResponse?> ProcessWithGeminiAsync(
         string message,
@@ -288,18 +292,19 @@ QUY TẮC PHẢN HỒI (RẤT QUAN TRỌNG):
      + description: Mô tả chi tiết các yêu cầu, công cụ, hướng dẫn
      + estimatedPrice: Giá đề xuất hợp lý bằng số nguyên (VNĐ)
      + isUrgent: boolean
+     + locationText: Nếu trong yêu cầu có địa chỉ/địa điểm (ví dụ '289, Nguyễn Hồng Ánh, Hoà Xuân'...), hãy trích xuất và bổ sung quận/huyện, thành phố còn thiếu (ví dụ '289 Nguyễn Hồng Ánh, Hoà Xuân, Đà Nẵng')
 3. NẾU TASKER TÌM VIỆC THEO TỪ KHÓA / NGÔN NGỮ TỰ NHIÊN:
    - Dựa vào danh sách công việc ĐANG MỞ trong Database ở trên, chọn ra các công việc phù hợp với từ khóa và điền vào `jobRecommendations` (kèm đúng `id` trong DB và `matchReason`).
 4. NẾU SEEKER TÌM TASKER:
-   - Dựa vào danh sách Tasker trong Database, chọn 1-3 người phù hợp và điền vào `taskerRecommendations`.
+   - Dựa vào danh sách Tasker trong Database, chọn 1-3 người phù hợp và điền vào `taskerRecommendations`. Nếu Seeker có công việc trong danh sách 'userJobs' ở trên, hãy gán `jobId` của công việc đó vào tasker recommendation để Seeker có thể bấm nhắn tin trao đổi ngay.
 
 ĐỊNH DẠNG TRẢ VỀ:
 Trả về JSON thuần duy nhất:
 {{
   ""reply"": ""Nội dung trả lời và hướng dẫn người dùng bằng tiếng Việt..."",
-  ""jobDraft"": null hoặc {{ ""title"": ""..."", ""category"": ""helper"", ""description"": ""..."", ""estimatedPrice"": 100000, ""isUrgent"": false }},
+  ""jobDraft"": null hoặc {{ ""title"": ""..."", ""category"": ""helper"", ""description"": ""..."", ""estimatedPrice"": 100000, ""isUrgent"": false, ""locationText"": ""289 Nguyễn Hồng Ánh, Hoà Xuân, Đà Nẵng"" }},
   ""jobRecommendations"": [ {{ ""id"": ""UUID"", ""title"": ""..."", ""category"": ""..."", ""price"": 50000, ""locationText"": ""..."", ""matchReason"": ""..."" }} ],
-  ""taskerRecommendations"": [ {{ ""id"": ""UUID"", ""name"": ""..."", ""avatarUrl"": null, ""ratingAvg"": 4.9, ""skills"": [""helper""], ""bio"": ""..."", ""matchReason"": ""..."" }} ]
+  ""taskerRecommendations"": [ {{ ""id"": ""UUID"", ""name"": ""..."", ""avatarUrl"": null, ""ratingAvg"": 4.9, ""skills"": [""helper""], ""bio"": ""..."", ""matchReason"": ""..."", ""jobId"": ""UUID_HOẶC_NULL"" }} ]
 }}";
 
         var rawResponse = await _gemini.GenerateTextAsync(prompt, temperature: 0.25, maxTokens: 2048, ct: ct);
@@ -353,6 +358,7 @@ Trả về JSON thuần duy nhất:
         // 2. Seeker tìm Tasker phù hợp trong Database
         if (isSeeker && isFindTaskerIntent)
         {
+            var relevantJob = userJobs.FirstOrDefault(j => j.Status == JobStatus.Open) ?? userJobs.FirstOrDefault();
             var matched = taskers
                 .OrderByDescending(t => t.RatingAvg)
                 .Take(3)
@@ -363,7 +369,8 @@ Trả về JSON thuần duy nhất:
                     t.RatingAvg,
                     ParseSkills(t.Skills),
                     t.Bio,
-                    MatchReason: $"Đánh giá cao {t.RatingAvg:F1}★, kỹ năng phù hợp và có phản hồi nhanh."))
+                    MatchReason: $"Đánh giá cao {t.RatingAvg:F1}★, kỹ năng phù hợp và có phản hồi nhanh.",
+                    JobId: relevantJob?.Id))
                 .ToList();
 
             var reply = matched.Count > 0
@@ -463,6 +470,7 @@ Trả về JSON thuần duy nhất:
     private static JobDraftDto GenerateSmartLocalJobDraft(string userPrompt)
     {
         var lower = userPrompt.ToLowerInvariant();
+        var locationText = ExtractAddressFromPrompt(userPrompt);
 
         // 1. Kiểm tra nếu là việc lập trình / code / CNTT / bài tập máy tính
         var isCoding = lower.Contains("code") || lower.Contains("lập trình") || lower.Contains("viết app") || lower.Contains("làm web") || lower.Contains("it") ||
@@ -525,7 +533,8 @@ Trả về JSON thuần duy nhất:
                 Category: "helper",
                 Description: $"Cần bạn sinh viên hoặc lập trình viên am hiểu {topicDesc} hỗ trợ giải và viết code bài tập lớn. Yêu cầu viết code sạch, chú thích logic rõ ràng, kiểm tra chạy không lỗi và hướng dẫn cách chạy chương trình.",
                 EstimatedPrice: 100000,
-                IsUrgent: false);
+                IsUrgent: false,
+                LocationText: locationText);
         }
 
         // 2. Gia sư / Kèm học các môn khác
@@ -536,7 +545,8 @@ Trả về JSON thuần duy nhất:
                 Category: "helper",
                 Description: "Cần bạn sinh viên có phát âm chuẩn hoặc chứng chỉ hỗ trợ kèm tiếng Anh 1-1 theo buổi, sửa lỗi phát âm và hướng dẫn làm bài tập.",
                 EstimatedPrice: 120000,
-                IsUrgent: false);
+                IsUrgent: false,
+                LocationText: locationText);
         }
 
         if (lower.Contains("toán") || lower.Contains("lý") || lower.Contains("hóa") || lower.Contains("gia sư"))
@@ -546,7 +556,8 @@ Trả về JSON thuần duy nhất:
                 Category: "helper",
                 Description: "Cần bạn sinh viên có kiến thức vững hỗ trợ giải đáp bài tập và ôn tập kiến thức, thái độ nhiệt tình, kiên nhẫn giảng giải.",
                 EstimatedPrice: 100000,
-                IsUrgent: false);
+                IsUrgent: false,
+                LocationText: locationText);
         }
 
         if (lower.Contains("excel") || lower.Contains("word") || lower.Contains("slide") || lower.Contains("powerpoint") || lower.Contains("nhập liệu"))
@@ -556,7 +567,8 @@ Trả về JSON thuần duy nhất:
                 Category: "helper",
                 Description: "Cần một bạn thành thạo tin học văn phòng hỗ trợ thiết kế slide thuyết trình hoặc xử lý bảng tính dữ liệu nhanh chóng và đẹp mắt.",
                 EstimatedPrice: 80000,
-                IsUrgent: false);
+                IsUrgent: false,
+                LocationText: locationText);
         }
 
         // 3. Dọn dẹp phòng trọ / KTX
@@ -567,7 +579,8 @@ Trả về JSON thuần duy nhất:
                 Category: "cleaning",
                 Description: "Cần 1 bạn sinh viên phụ quét dọn phòng, lau sàn, cọ rửa bồn rửa/toilet và gom rác sạch sẽ trước khi trả phòng. Thời gian làm khoảng 1.5 - 2 tiếng, đồ dùng vệ sinh có sẵn tại phòng.",
                 EstimatedPrice: 120000,
-                IsUrgent: false);
+                IsUrgent: false,
+                LocationText: locationText);
         }
 
         // 4. Giao hàng / Giao tài liệu / Mua hộ
@@ -578,7 +591,8 @@ Trả về JSON thuần duy nhất:
                 Category: "delivery",
                 Description: "Cần bạn có xe máy giao nhanh túi tài liệu và đồ án từ trường sang KTX / nhà trọ (~3km). Yêu cầu giao cẩn thận, không làm gập rách hay dính ướt giấy tờ.",
                 EstimatedPrice: 50000,
-                IsUrgent: true);
+                IsUrgent: true,
+                LocationText: locationText);
         }
 
         // 5. Máy tính / Laptop / Cài Win / Phần mềm
@@ -589,7 +603,8 @@ Trả về JSON thuần duy nhất:
                 Category: "repair",
                 Description: "Laptop bị nóng quạt và chạy chậm, cần bạn sinh viên am hiểu kỹ thuật máy tính hỗ trợ thổi bụi tản nhiệt, tra keo tản nhiệt và cài đặt lại bộ ứng dụng văn phòng cơ bản.",
                 EstimatedPrice: 100000,
-                IsUrgent: false);
+                IsUrgent: false,
+                LocationText: locationText);
         }
 
         // 6. Chuyển trọ / Bê đồ / Phụ việc shop
@@ -600,7 +615,8 @@ Trả về JSON thuần duy nhất:
                 Category: "helper",
                 Description: "Cần 1 bạn sinh viên phụ bê vác đồ đạc nhẹ (vali quần áo, sách vở, quạt máy) chuyển sang phòng trọ mới gần trường. Quãng đường chuyển ngắn, thời gian làm khoảng 1.5 tiếng.",
                 EstimatedPrice: 120000,
-                IsUrgent: false);
+                IsUrgent: false,
+                LocationText: locationText);
         }
 
         // Mặc định cho mọi yêu cầu khác: tự động lấy chủ đề thực tế từ text người dùng
@@ -610,7 +626,8 @@ Trả về JSON thuần duy nhất:
             Category: "helper",
             Description: $"Yêu cầu công việc: {userPrompt}.\nCần bạn sinh viên nhận việc hỗ trợ hoàn thành cẩn thận, đúng giờ và nhiệt tình.",
             EstimatedPrice: 80000,
-            IsUrgent: false);
+            IsUrgent: false,
+            LocationText: locationText);
     }
 
     private static string CleanUserPrompt(string text)
@@ -627,6 +644,42 @@ Trả về JSON thuần duy nhất:
         if (string.IsNullOrWhiteSpace(cleaned)) cleaned = text.Trim();
         if (cleaned.Length > 45) cleaned = cleaned[..45] + "...";
         return char.ToUpper(cleaned[0]) + cleaned[1..];
+    }
+
+    private static string? ExtractAddressFromPrompt(string userPrompt)
+    {
+        if (string.IsNullOrWhiteSpace(userPrompt)) return null;
+        var lower = userPrompt.ToLowerInvariant();
+
+        // 1. Kiểm tra các địa danh quen thuộc (ví dụ Nguyễn Hồng Ánh, Hoà Xuân...)
+        if (lower.Contains("nguyễn hồng ánh") || lower.Contains("hoà xuân") || lower.Contains("hòa xuân"))
+        {
+            if (lower.Contains("289"))
+                return "289 Nguyễn Hồng Ánh, Hoà Xuân, Đà Nẵng";
+            return "Đường Nguyễn Hồng Ánh, Hoà Xuân, Đà Nẵng";
+        }
+
+        // 2. Tìm kiếm sau các giới từ chỉ địa điểm: tại, ở, địa chỉ, đến, tới...
+        var match = System.Text.RegularExpressions.Regex.Match(
+            userPrompt,
+            @"(?:tại|ở|địa chỉ|tới|đến)\s+([0-9a-zA-ZÀ-ỹ\s,\-\.\/]+)",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        if (match.Success)
+        {
+            var raw = match.Groups[1].Value.Trim().TrimEnd('.', ',');
+            if (raw.Length >= 5 && raw.Length <= 100)
+            {
+                if ((raw.ToLowerInvariant().Contains("hoà xuân") || raw.ToLowerInvariant().Contains("hòa xuân"))
+                    && !raw.ToLowerInvariant().Contains("đà nẵng"))
+                {
+                    raw += ", Đà Nẵng";
+                }
+                return raw;
+            }
+        }
+
+        return null;
     }
 
     private static JobDraftDto NormalizeDraft(JobDraftDto draft)

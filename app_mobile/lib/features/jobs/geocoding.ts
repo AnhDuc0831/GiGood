@@ -94,3 +94,104 @@ export async function reverseGeocodeCoords(coords: LatLng): Promise<string | nul
 
   return null
 }
+
+export type CompletedAddressResult = {
+  completedAddress: string
+  coords?: LatLng | null
+  found: boolean
+}
+
+/** Chuẩn hoá chuỗi tiếng Việt để so sánh (bỏ dấu, chuyển thường) */
+function normalizeVi(str?: string | null): string {
+  if (!str) return ''
+  return str
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase()
+    .trim()
+}
+
+/**
+ * Kiểm tra địa chỉ qua Map API (Photon Komoot & Nominatim & Native),
+ * nếu có địa chỉ đó trên bản đồ thì tự động điền các phần còn thiếu (quận/huyện, tỉnh/thành phố).
+ * Ví dụ: "289, Nguyễn Hồng Ánh, Hoà Xuân" -> "289, Nguyễn Hồng Ánh, Hoà Xuân, Đà Nẵng".
+ */
+export async function completeAddressWithMapApi(rawAddress: string): Promise<CompletedAddressResult> {
+  if (!rawAddress || !rawAddress.trim()) {
+    return { completedAddress: rawAddress, coords: null, found: false }
+  }
+
+  const clean = rawAddress.trim()
+
+  // 1. Thử gọi Photon Map API (OpenStreetMap geocoding engine nhanh, chính xác cao tại VN)
+  try {
+    const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(clean)}&limit=1`
+    const res = await fetch(url)
+    const data = await res.json()
+    if (data?.features && data.features.length > 0) {
+      const feat = data.features[0]
+      const props = feat.properties || {}
+      const coords: LatLng | null = feat.geometry?.coordinates
+        ? { lng: feat.geometry.coordinates[0], lat: feat.geometry.coordinates[1] }
+        : null
+
+      const city = props.city || props.state
+      const district = props.district || props.county
+
+      let completed = clean
+      const normInput = normalizeVi(clean)
+
+      // Bổ sung quận/huyện nếu chưa có trong input
+      if (district) {
+        const cleanDist = normalizeVi(district).replace(/phuong|quan|huyen|xa/g, '').trim()
+        if (cleanDist && !normInput.includes(cleanDist)) {
+          completed = `${completed}, ${district}`
+        }
+      }
+
+      // Bổ sung tỉnh/thành phố nếu chưa có trong input
+      if (city) {
+        const cleanCity = normalizeVi(city).replace(/thanh pho|tp|tinh/g, '').trim()
+        if (cleanCity && !normInput.includes(cleanCity)) {
+          completed = `${completed}, ${city}`
+        }
+      }
+
+      return {
+        completedAddress: completed,
+        coords,
+        found: true,
+      }
+    }
+  } catch {
+    // Bỏ qua lỗi mạng photon
+  }
+
+  // 2. Thử Native Geocoder và Reverse Geocoder của máy
+  try {
+    const results = await Location.geocodeAsync(clean)
+    if (results && results.length > 0) {
+      const coords = { lat: results[0].latitude, lng: results[0].longitude }
+      const reverse = await reverseGeocodeCoords(coords)
+      if (reverse) {
+        let completed = clean
+        const normInput = normalizeVi(clean)
+        const parts = reverse.split(',').map((p) => p.trim())
+        for (const p of parts) {
+          const normP = normalizeVi(p)
+          if (normP && !normInput.includes(normP) && !normalizeVi(completed).includes(normP)) {
+            completed = `${completed}, ${p}`
+          }
+        }
+        return { completedAddress: completed, coords, found: true }
+      }
+      return { completedAddress: clean, coords, found: true }
+    }
+  } catch {
+    // Fallback
+  }
+
+  return { completedAddress: clean, coords: null, found: false }
+}

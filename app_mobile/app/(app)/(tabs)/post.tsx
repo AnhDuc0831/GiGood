@@ -25,7 +25,7 @@ import { Category } from '../../../types'
 import { CATEGORY_META } from '../../../lib/categories'
 import { JobMap } from '../../../lib/features/jobs/components/JobMap'
 import { Q1_CENTER, type LatLng } from '../../../lib/features/jobs/geo'
-import { geocodeAddress, reverseGeocodeCoords } from '../../../lib/features/jobs/geocoding'
+import { completeAddressWithMapApi, geocodeAddress, reverseGeocodeCoords } from '../../../lib/features/jobs/geocoding'
 import { getApiErrorMessage } from '../../../lib/features/jobs/api'
 import { colors } from '../../../constants/theme'
 import { useAi } from '../../../lib/features/ai/context/AiContext'
@@ -81,21 +81,6 @@ export default function PostScreen() {
   const { showToast } = useUi()
   const { openAi, activeDraft, clearDraft } = useAi()
 
-  useEffect(() => {
-    if (activeDraft) {
-      setTitle(activeDraft.title)
-      setCategory(activeDraft.category)
-      setDescription(activeDraft.description)
-      setBudget(String(activeDraft.estimatedPrice))
-      setUrgent(activeDraft.isUrgent)
-      clearDraft()
-      showToast('Đã điền tự động nội dung từ GiGood AI!', 'success')
-    }
-  }, [activeDraft, clearDraft, showToast])
-  const { position, request: requestDevicePosition } = useDeviceLocation()
-  const router = useRouter()
-  const queryClient = useQueryClient()
-  const { keyboardHeight, isKeyboardVisible } = useKeyboard()
   const [title, setTitle] = useState('')
   const [category, setCategory] = useState<Category>('repair')
   const [description, setDescription] = useState('')
@@ -107,6 +92,54 @@ export default function PostScreen() {
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pickedCoords, setPickedCoords] = useState<LatLng | null>(null)
   const [locating, setLocating] = useState(false)
+  const [completingAddress, setCompletingAddress] = useState(false)
+
+  const handleCompleteAddress = async (addrToComplete?: string) => {
+    const target = (addrToComplete ?? location).trim()
+    if (!target || target.length < 3 || completingAddress) return
+    setCompletingAddress(true)
+    try {
+      const res = await completeAddressWithMapApi(target)
+      if (res.found && res.completedAddress) {
+        setLocation(res.completedAddress)
+        if (res.coords) {
+          setPickedCoords(res.coords)
+        }
+        showToast('Đã đối chiếu bản đồ & hoàn thiện địa chỉ!', 'success')
+      }
+    } catch {
+      // Bỏ qua lỗi
+    } finally {
+      setCompletingAddress(false)
+    }
+  }
+
+  useEffect(() => {
+    if (activeDraft) {
+      setTitle(activeDraft.title)
+      setCategory(activeDraft.category)
+      setDescription(activeDraft.description)
+      setBudget(String(activeDraft.estimatedPrice))
+      setUrgent(activeDraft.isUrgent)
+      if (activeDraft.locationText) {
+        setLocation(activeDraft.locationText)
+        void completeAddressWithMapApi(activeDraft.locationText).then((res) => {
+          if (res.found && res.completedAddress) {
+            setLocation(res.completedAddress)
+          }
+          if (res.coords) {
+            setPickedCoords(res.coords)
+          }
+        })
+      }
+      clearDraft()
+      showToast('Đã điền tự động nội dung & địa điểm từ GiGood AI!', 'success')
+    }
+  }, [activeDraft, clearDraft, showToast])
+  const { position, request: requestDevicePosition } = useDeviceLocation()
+  const router = useRouter()
+  const queryClient = useQueryClient()
+  const { keyboardHeight, isKeyboardVisible } = useKeyboard()
 
   useEffect(() => {
     void requestDevicePosition()
@@ -349,6 +382,19 @@ export default function PostScreen() {
             <Text className="text-xs font-bold text-gray-700">Địa điểm thực hiện <Text className="text-red-500">*</Text></Text>
             <View className="flex-row items-center space-x-2 gap-2">
               <TouchableOpacity
+                onPress={() => void handleCompleteAddress()}
+                disabled={completingAddress || !location.trim()}
+                hitSlop={6}
+                className="flex-row items-center bg-orange-50 px-2 py-1 rounded-lg border border-orange-200"
+              >
+                {completingAddress ? (
+                  <ActivityIndicator size="small" color={colors.orange} style={{ transform: [{ scale: 0.6 }] }} />
+                ) : (
+                  <FontAwesome name="magic" size={10} color={colors.orange} />
+                )}
+                <Text className="text-[10px] font-bold text-orange-700 ml-1">Chuẩn hoá địa chỉ</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
                 onPress={handleUseCurrentLocation}
                 disabled={locating}
                 hitSlop={6}
@@ -376,7 +422,8 @@ export default function PostScreen() {
             <VTextInput
               value={location}
               onChangeText={setLocation}
-              placeholder="Số nhà, đường, quận, thành phố..."
+              onBlur={() => void handleCompleteAddress()}
+              placeholder="Số nhà, đường, quận, thành phố (VD: 289 Nguyễn Hồng Ánh, Hoà Xuân)..."
               placeholderTextColor={colors.grayMuted}
               className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 text-sm"
             />

@@ -16,6 +16,7 @@ export type JobDraft = {
   description: string
   estimatedPrice: number
   isUrgent: boolean
+  locationText?: string | null
 }
 
 export type JobRecommendation = {
@@ -35,6 +36,7 @@ export type TaskerRecommendation = {
   skills: string[]
   bio: string | null
   matchReason: string
+  jobId?: string | null
 }
 
 export type AiChatResponse = {

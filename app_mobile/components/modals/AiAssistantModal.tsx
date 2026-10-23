@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -15,6 +16,9 @@ import {
 import { FontAwesome } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
 import { useAuth } from '../../hooks/useAuth'
+import { useChat } from '../../hooks/useChat'
+import { useJobs } from '../../hooks/useJobs'
+import { useUi } from '../../hooks/useUi'
 import { sendAiChat } from '../../lib/features/ai/api'
 import type { AiChatMessage, JobDraft, JobRecommendation, TaskerRecommendation } from '../../lib/features/ai/types'
 import { CATEGORY_META } from '../../lib/categories'
@@ -32,13 +36,78 @@ export function AiAssistantModal({ visible, initialPrompt, onClose, onApplyDraft
   const { currentRole, profile } = useAuth()
   const isSeeker = currentRole === 'seeker'
   const router = useRouter()
+  const { openConversation } = useChat()
+  const { jobs: myJobs } = useJobs({ mine: true })
+  const { showToast } = useUi()
 
   const [messages, setMessages] = useState<AiChatMessage[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [isConfigured, setIsConfigured] = useState(true)
+  const [openingChatWithTaskerId, setOpeningChatWithTaskerId] = useState<string | null>(null)
+  const [selectedTaskerForJobPick, setSelectedTaskerForJobPick] = useState<TaskerRecommendation | null>(null)
   const listRef = useRef<FlatList>(null)
   const handledPromptRef = useRef<string | null>(null)
+
+  const handleChatWithTasker = async (tasker: TaskerRecommendation, targetJobId?: string) => {
+    const jobIdToUse = targetJobId || tasker.jobId
+
+    if (jobIdToUse) {
+      setOpeningChatWithTaskerId(tasker.id)
+      try {
+        const convId = await openConversation(jobIdToUse)
+        onClose()
+        router.push({
+          pathname: '/(app)/chat/[id]',
+          params: { id: convId, jobId: jobIdToUse },
+        })
+      } catch {
+        showToast('Không thể mở cuộc trò chuyện lúc này.', 'error')
+      } finally {
+        setOpeningChatWithTaskerId(null)
+      }
+      return
+    }
+
+    const availableJobs = myJobs.filter((j) => j.status === 'Open' || j.status === 'Assigned')
+
+    if (availableJobs.length === 0) {
+      Alert.alert(
+        'Chưa có bài đăng việc',
+        `Để trò chuyện với ${tasker.name}, bạn cần có ít nhất một bài đăng việc để trao đổi. Bạn có muốn đăng việc mới ngay bây giờ không?`,
+        [
+          { text: 'Để sau', style: 'cancel' },
+          {
+            text: 'Đăng việc ngay',
+            onPress: () => {
+              onClose()
+              router.push('/(app)/(tabs)/post')
+            },
+          },
+        ],
+      )
+      return
+    }
+
+    if (availableJobs.length === 1) {
+      setOpeningChatWithTaskerId(tasker.id)
+      try {
+        const convId = await openConversation(availableJobs[0].id)
+        onClose()
+        router.push({
+          pathname: '/(app)/chat/[id]',
+          params: { id: convId, jobId: availableJobs[0].id },
+        })
+      } catch {
+        showToast('Không thể mở cuộc trò chuyện lúc này.', 'error')
+      } finally {
+        setOpeningChatWithTaskerId(null)
+      }
+      return
+    }
+
+    setSelectedTaskerForJobPick(tasker)
+  }
 
   // Initialize greeting and handle initialPrompt
   useEffect(() => {
@@ -156,6 +225,15 @@ export function AiAssistantModal({ visible, initialPrompt, onClose, onApplyDraft
           {draft.description}
         </Text>
 
+        {draft.locationText ? (
+          <View className="flex-row items-center space-x-1.5 bg-orange-100/80 px-2.5 py-1.5 rounded-xl">
+            <FontAwesome name="map-marker" size={12} color={colors.orange} />
+            <Text className="text-[11px] font-semibold text-orange-950 flex-1 ml-1" numberOfLines={2}>
+              {draft.locationText}
+            </Text>
+          </View>
+        ) : null}
+
         <View className="flex-row items-center justify-between pt-1 border-t border-orange-100">
           <Text className="text-[11px] text-gray-500">Giá đề xuất:</Text>
           <Text className="text-sm font-extrabold text-teal-600">
@@ -249,6 +327,23 @@ export function AiAssistantModal({ visible, initialPrompt, onClose, onApplyDraft
             <Text className="text-[10px] text-teal-700 bg-teal-50 px-2 py-1 rounded-lg font-medium">
               💡 {t.matchReason}
             </Text>
+
+            <TouchableOpacity
+              onPress={() => void handleChatWithTasker(t)}
+              disabled={openingChatWithTaskerId === t.id}
+              className="mt-1.5 bg-teal-600 active:bg-teal-700 py-2.5 px-3 rounded-xl flex-row items-center justify-center space-x-1.5"
+            >
+              {openingChatWithTaskerId === t.id ? (
+                <ActivityIndicator size="small" color="white" />
+              ) : (
+                <>
+                  <FontAwesome name="commenting" size={12} color="white" />
+                  <Text className="text-white text-xs font-bold ml-1.5">
+                    Trò chuyện với {t.name}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
           </View>
         ))}
       </View>
@@ -408,6 +503,63 @@ export function AiAssistantModal({ visible, initialPrompt, onClose, onApplyDraft
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
+
+      {/* Modal chọn công việc khi Seeker có nhiều công việc đang mở */}
+      <Modal
+        visible={!!selectedTaskerForJobPick}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedTaskerForJobPick(null)}
+      >
+        <View className="flex-1 bg-black/50 justify-end p-4">
+          <View className="bg-white rounded-3xl p-5 space-y-3.5 max-h-[75%]">
+            <View className="flex-row items-center justify-between pb-2 border-b border-gray-100">
+              <View className="flex-1 mr-2">
+                <Text className="text-base font-extrabold text-gray-900">
+                  Chọn công việc để trao đổi
+                </Text>
+                <Text className="text-xs text-gray-500 mt-0.5">
+                  Trao đổi với {selectedTaskerForJobPick?.name} về công việc nào của bạn?
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setSelectedTaskerForJobPick(null)}
+                className="w-8 h-8 rounded-full bg-gray-100 items-center justify-center"
+              >
+                <FontAwesome name="times" size={14} color={colors.grayIcon} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView className="space-y-2">
+              {myJobs
+                .filter((j) => j.status === 'Open' || j.status === 'Assigned')
+                .map((job) => (
+                  <TouchableOpacity
+                    key={job.id}
+                    onPress={() => {
+                      const t = selectedTaskerForJobPick
+                      setSelectedTaskerForJobPick(null)
+                      if (t) void handleChatWithTasker(t, job.id)
+                    }}
+                    className="p-3.5 rounded-2xl border border-gray-200 bg-stone-50 active:bg-orange-50 mb-2"
+                  >
+                    <Text className="text-xs font-bold text-gray-900" numberOfLines={1}>
+                      {job.title}
+                    </Text>
+                    <View className="flex-row items-center justify-between mt-1.5">
+                      <Text className="text-[11px] font-semibold text-teal-600">
+                        {formatVnd(job.price)}
+                      </Text>
+                      <Text className="text-[10px] text-gray-400">
+                        {job.status === 'Open' ? 'Đang tuyển' : 'Đang thực hiện'}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </Modal>
   )
 }
