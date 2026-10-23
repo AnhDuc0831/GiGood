@@ -260,7 +260,7 @@ export default function PostScreen() {
 
       {/* AI Assistant Banner */}
       <TouchableOpacity
-        onPress={() => openAi('Code bài tập C#')}
+        onPress={() => openAi()}
         className="bg-orange-50/80 border border-orange-200 rounded-2xl p-3 mb-4 flex-row items-center justify-between"
       >
         <View className="flex-row items-center space-x-2.5 flex-1 mr-2">
@@ -272,7 +272,7 @@ export default function PostScreen() {
               ✨ Trợ lý AI: Tự động viết & điền bài đăng
             </Text>
             <Text className="text-[10px] text-orange-800 mt-0.5">
-              Nhập yêu cầu (ví dụ: Code bài tập C#), AI sẽ tự tạo mô tả và điền form cho bạn!
+              Nhập yêu cầu (ví dụ: Code bài tập Java, Python, Dọn trọ...), AI sẽ tự tạo mô tả và điền form cho bạn!
             </Text>
           </View>
         </View>

@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react'
 import {
   ActivityIndicator,
   FlatList,
-  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -48,7 +47,7 @@ export function AiAssistantModal({ visible, initialPrompt, onClose, onApplyDraft
         const greeting: AiChatMessage = {
           role: 'assistant',
           content: isSeeker
-            ? `Xin chào ${profile?.name || 'bạn'}! Tôi là Trợ lý GiGood AI.\n\nTôi có thể giúp bạn:\n• **Tự động viết & điền bài đăng việc** (ví dụ: 'Code bài tập C#', 'Dọn phòng trọ').\n• **Tìm Tasker phù hợp** từ cơ sở dữ liệu.\n• **Tư vấn mức giá & thời gian** hợp lý.\n\nBạn muốn đăng việc gì hay cần tôi hỗ trợ điều gì?`
+            ? `Xin chào ${profile?.name || 'bạn'}! Tôi là Trợ lý GiGood AI.\n\nTôi có thể giúp bạn:\n• **Tự động viết & điền bài đăng việc** (ví dụ: 'Code bài tập Java', 'Code bài tập C#', 'Dọn phòng trọ').\n• **Tìm Tasker phù hợp** từ cơ sở dữ liệu.\n• **Tư vấn mức giá & thời gian** hợp lý.\n\nBạn muốn đăng việc gì hay cần tôi hỗ trợ điều gì?`
             : `Xin chào ${profile?.name || 'bạn'}! Tôi là Trợ lý GiGood AI dành cho Tasker.\n\nTôi có thể giúp bạn:\n• **Lọc và tìm việc thông minh** từ dữ liệu các việc đang mở.\n• **Tìm việc theo kỹ năng** (máy tính, IT, giao hàng, dọn dẹp...).\n• **Tư vấn nâng cao đánh giá** để nhận việc nhanh hơn.\n\nBạn đang tìm việc gì hôm nay?`,
         }
         setMessages([greeting])
@@ -76,6 +75,9 @@ export function AiAssistantModal({ visible, initialPrompt, onClose, onApplyDraft
     setMessages((prev) => [...prev, userMsg])
     if (!textToSend) setInput('')
     setLoading(true)
+
+    // Cuộn xuống tin nhắn mới
+    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50)
 
     try {
       const historyPayload = messages.slice(-4).map((m) => ({
@@ -111,6 +113,7 @@ export function AiAssistantModal({ visible, initialPrompt, onClose, onApplyDraft
   }
 
   const seekerQuickPrompts = [
+    '🪄 Viết bài: Code bài tập Java',
     '🪄 Viết bài: Code bài tập C#',
     '🧹 Viết bài: Dọn dẹp phòng trọ',
     '🔍 Tìm Tasker máy tính & IT',
@@ -254,130 +257,134 @@ export function AiAssistantModal({ visible, initialPrompt, onClose, onApplyDraft
 
   return (
     <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
-      <SafeAreaView className="flex-1 bg-stone-50">
-        {/* Header */}
-        <View className="bg-white border-b border-gray-200 px-4 py-3 flex-row items-center justify-between">
-          <View className="flex-row items-center space-x-2.5">
-            <View className="w-9 h-9 rounded-xl bg-orange-500 items-center justify-center">
-              <FontAwesome name="magic" size={16} color="white" />
-            </View>
-            <View>
-              <View className="flex-row items-center space-x-1.5">
-                <Text className="font-extrabold text-base text-gray-900">GiGood AI</Text>
-                <Text className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 uppercase">
-                  {isSeeker ? 'Seeker Assistant' : 'Tasker Assistant'}
-                </Text>
-              </View>
-              <Text className="text-[10px] text-gray-400">
-                {isConfigured ? 'Trợ lý AI thông minh' : 'Chế độ Trợ lý Mẫu (Chưa cấu hình API Key)'}
-              </Text>
-            </View>
-          </View>
-          <TouchableOpacity
-            onPress={onClose}
-            className="w-8 h-8 rounded-full bg-gray-100 items-center justify-center"
-          >
-            <FontAwesome name="times" size={14} color={colors.grayIcon} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Chat message list */}
-        <FlatList
-          ref={listRef}
-          data={messages}
-          keyExtractor={(_, index) => String(index)}
-          contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
-          renderItem={({ item }) => {
-            const isUser = item.role === 'user'
-            return (
-              <View
-                className={`mb-3 flex-row ${isUser ? 'justify-end' : 'justify-start'}`}
-              >
-                {!isUser && (
-                  <View className="w-7 h-7 rounded-lg bg-orange-500 items-center justify-center mr-2 mt-1">
-                    <FontAwesome name="magic" size={11} color="white" />
-                  </View>
-                )}
-                <View
-                  className={`max-w-[85%] rounded-2xl px-4 py-3 ${
-                    isUser
-                      ? isSeeker
-                        ? 'bg-orange-500 text-white rounded-tr-xs'
-                        : 'bg-teal-600 text-white rounded-tr-xs'
-                      : 'bg-white border border-gray-200 rounded-tl-xs'
-                  }`}
-                >
-                  <Text
-                    className={`text-xs leading-relaxed ${
-                      isUser ? 'text-white font-medium' : 'text-gray-800'
-                    }`}
-                  >
-                    {item.content}
-                  </Text>
-
-                  {/* Extra widgets attached to assistant messages */}
-                  {item.jobDraft && renderJobDraft(item.jobDraft)}
-                  {item.jobRecommendations &&
-                    item.jobRecommendations.length > 0 &&
-                    renderJobRecommendations(item.jobRecommendations)}
-                  {item.taskerRecommendations &&
-                    item.taskerRecommendations.length > 0 &&
-                    renderTaskerRecommendations(item.taskerRecommendations)}
-
-                  {item.time && (
-                    <Text
-                      className={`text-[9px] mt-1 text-right ${
-                        isUser ? 'text-orange-100' : 'text-gray-400'
-                      }`}
-                    >
-                      {item.time}
-                    </Text>
-                  )}
-                </View>
-              </View>
-            )
-          }}
-          ListFooterComponent={
-            loading ? (
-              <View className="flex-row items-center space-x-2 p-2">
-                <View className="w-6 h-6 rounded-lg bg-orange-500 items-center justify-center mr-2">
-                  <ActivityIndicator size="small" color="white" />
-                </View>
-                <Text className="text-xs text-gray-400 italic">
-                  AI đang đọc dữ liệu và suy nghĩ...
-                </Text>
-              </View>
-            ) : null
-          }
-        />
-
-        {/* Quick Suggestion Chips */}
-        <View className="px-3 py-1.5 bg-stone-100/70 border-t border-gray-100">
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row">
-            {quickPrompts.map((p, idx) => (
-              <TouchableOpacity
-                key={idx}
-                onPress={() => handleSend(p.replace(/^[^\w\s]+\s*/, ''))}
-                className="bg-white border border-gray-200 rounded-full px-3 py-1.5 mr-2"
-              >
-                <Text className="text-[11px] font-bold text-gray-700">{p}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-
-        {/* Input Bar */}
+      <SafeAreaView className="flex-1 bg-stone-50" style={{ flex: 1 }}>
         <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          className="flex-1"
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
         >
+          {/* Header - Cố định ở trên */}
+          <View className="bg-white border-b border-gray-200 px-4 py-3 flex-row items-center justify-between">
+            <View className="flex-row items-center space-x-2.5">
+              <View className="w-9 h-9 rounded-xl bg-orange-500 items-center justify-center">
+                <FontAwesome name="magic" size={16} color="white" />
+              </View>
+              <View>
+                <View className="flex-row items-center space-x-1.5">
+                  <Text className="font-extrabold text-base text-gray-900">GiGood AI</Text>
+                  <Text className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 uppercase">
+                    {isSeeker ? 'Seeker Assistant' : 'Tasker Assistant'}
+                  </Text>
+                </View>
+                <Text className="text-[10px] text-gray-400">
+                  {isConfigured ? 'Trợ lý AI thông minh' : 'Chế độ Trợ lý Mẫu (Chưa cấu hình API Key)'}
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              onPress={onClose}
+              className="w-8 h-8 rounded-full bg-gray-100 items-center justify-center"
+            >
+              <FontAwesome name="times" size={14} color={colors.grayIcon} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Chat message list - BẮT BUỘC có flex: 1 để cuộn nội bộ và KHÔNG đẩy Input Bar ra ngoài */}
+          <FlatList
+            ref={listRef}
+            style={{ flex: 1 }}
+            className="flex-1"
+            data={messages}
+            keyExtractor={(_, index) => String(index)}
+            contentContainerStyle={{ padding: 16, paddingBottom: 20 }}
+            renderItem={({ item }) => {
+              const isUser = item.role === 'user'
+              return (
+                <View
+                  className={`mb-3 flex-row ${isUser ? 'justify-end' : 'justify-start'}`}
+                >
+                  {!isUser && (
+                    <View className="w-7 h-7 rounded-lg bg-orange-500 items-center justify-center mr-2 mt-1">
+                      <FontAwesome name="magic" size={11} color="white" />
+                    </View>
+                  )}
+                  <View
+                    className={`max-w-[85%] rounded-2xl px-4 py-3 ${
+                      isUser
+                        ? isSeeker
+                          ? 'bg-orange-500 text-white rounded-tr-xs'
+                          : 'bg-teal-600 text-white rounded-tr-xs'
+                        : 'bg-white border border-gray-200 rounded-tl-xs'
+                    }`}
+                  >
+                    <Text
+                      className={`text-xs leading-relaxed ${
+                        isUser ? 'text-white font-medium' : 'text-gray-800'
+                      }`}
+                    >
+                      {item.content}
+                    </Text>
+
+                    {/* Extra widgets attached to assistant messages */}
+                    {item.jobDraft && renderJobDraft(item.jobDraft)}
+                    {item.jobRecommendations &&
+                      item.jobRecommendations.length > 0 &&
+                      renderJobRecommendations(item.jobRecommendations)}
+                    {item.taskerRecommendations &&
+                      item.taskerRecommendations.length > 0 &&
+                      renderTaskerRecommendations(item.taskerRecommendations)}
+
+                    {item.time && (
+                      <Text
+                        className={`text-[9px] mt-1 text-right ${
+                          isUser ? 'text-orange-100' : 'text-gray-400'
+                        }`}
+                      >
+                        {item.time}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+              )
+            }}
+            ListFooterComponent={
+              loading ? (
+                <View className="flex-row items-center space-x-2 p-2">
+                  <View className="w-6 h-6 rounded-lg bg-orange-500 items-center justify-center mr-2">
+                    <ActivityIndicator size="small" color="white" />
+                  </View>
+                  <Text className="text-xs text-gray-400 italic">
+                    AI đang đọc dữ liệu và suy nghĩ...
+                  </Text>
+                </View>
+              ) : null
+            }
+          />
+
+          {/* Quick Suggestion Chips - Cố định phía trên ô nhập */}
+          <View className="px-3 py-1.5 bg-stone-100/80 border-t border-gray-200">
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row">
+              {quickPrompts.map((p, idx) => (
+                <TouchableOpacity
+                  key={idx}
+                  onPress={() => handleSend(p.replace(/^[^\w\s]+\s*/, ''))}
+                  className="bg-white border border-gray-200 rounded-full px-3 py-1.5 mr-2"
+                >
+                  <Text className="text-[11px] font-bold text-gray-700">{p}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+
+          {/* Input Bar - CỐ ĐỊNH 100% Ở ĐÁY MÀN HÌNH */}
           <View className="bg-white border-t border-gray-200 px-4 py-2.5 flex-row items-center space-x-2">
             <TextInput
               value={input}
               onChangeText={setInput}
               placeholder={
                 isSeeker
-                  ? 'Ví dụ: Code bài tập C#, Cần người dọn phòng...'
+                  ? 'Ví dụ: Code bài tập Java, Dọn phòng trọ...'
                   : 'Ví dụ: Tìm việc máy tính quanh quận 1...'
               }
               placeholderTextColor={colors.grayMuted}

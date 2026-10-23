@@ -231,12 +231,13 @@ CÂU HỎI CỦA NGƯỜI DÙNG: ""{message}""
 
 QUY TẮC PHẢN HỒI (RẤT QUAN TRỌNG):
 1. Bạn là Trợ lý AI GiGood. Trả lời bằng tiếng Việt thân thiện, nhiệt tình.
-2. NẾU SEEKER MUỐN ĐĂNG VIỆC (ví dụ: 'Code bài tập C#', 'Dọn phòng', 'Giao đồ'...):
-   - BẮT BUỘC tạo `jobDraft` với đầy đủ:
-     + title: Tiêu đề rõ ràng
-     + category: 'repair' | 'cleaning' | 'delivery' | 'helper'
+2. NẾU SEEKER MUỐN ĐĂNG VIỆC (ví dụ: 'Tạo việc code Java', 'Code bài tập Python', 'Dọn phòng trọ', 'Giao đồ'...):
+   - BẮT BUỘC bạn phải tạo `jobDraft` CHÍNH XÁC theo ngôn ngữ lập trình hoặc chủ đề người dùng yêu cầu:
+     + Nếu người dùng yêu cầu 'Java' thì tiêu đề và mô tả PHẢI là Java, nếu yêu cầu 'Python' thì PHẢI là Python, TUYỆT ĐỐI KHÔNG tự ý đổi sang ngôn ngữ khác như C#!
+     + title: Tiêu đề rõ ràng theo đúng ngôn ngữ/chủ đề người dùng yêu cầu
+     + category: 'repair' | 'cleaning' | 'delivery' | 'helper' (việc lập trình/code/gia sư chọn 'helper')
      + description: Mô tả chi tiết các yêu cầu, công cụ, hướng dẫn
-     + estimatedPrice: Giá đề xuất hợp lý bằng số nguyên
+     + estimatedPrice: Giá đề xuất hợp lý bằng số nguyên (VNĐ)
      + isUrgent: boolean
 3. NẾU TASKER TÌM VIỆC THEO TỪ KHÓA / NGÔN NGỮ TỰ NHIÊN:
    - Dựa vào danh sách công việc ĐANG MỞ trong Database ở trên, chọn ra các công việc phù hợp với từ khóa và điền vào `jobRecommendations` (kèm đúng `id` trong DB và `matchReason`).
@@ -414,29 +415,113 @@ Trả về JSON thuần duy nhất:
     {
         var lower = userPrompt.ToLowerInvariant();
 
-        // Chủ đề 1: Code bài tập C# / CNTT / Lập trình
-        if (lower.Contains("c#") || lower.Contains("code") || lower.Contains("lập trình") || lower.Contains("bài tập") || lower.Contains("oop") || lower.Contains("it"))
+        // 1. Kiểm tra nếu là việc lập trình / code / CNTT / bài tập máy tính
+        var isCoding = lower.Contains("code") || lower.Contains("lập trình") || lower.Contains("viết app") || lower.Contains("làm web") || lower.Contains("it") ||
+                       lower.Contains("java") || lower.Contains("python") || lower.Contains("c++") || lower.Contains("cpp") || lower.Contains("c#") || lower.Contains(".net") ||
+                       lower.Contains("javascript") || lower.Contains("react") || lower.Contains("html") || lower.Contains("css") || lower.Contains("sql") || lower.Contains("php") || lower.Contains("flutter");
+
+        if (isCoding)
         {
+            string language = "Lập trình";
+            string topicDesc = "lập trình & giải thuật";
+
+            if (lower.Contains("java"))
+            {
+                language = "Java";
+                topicDesc = "lập trình hướng đối tượng (OOP) Java";
+            }
+            else if (lower.Contains("python"))
+            {
+                language = "Python";
+                topicDesc = "ngôn ngữ Python, xử lý dữ liệu và thuật toán";
+            }
+            else if (lower.Contains("c++") || lower.Contains("cpp"))
+            {
+                language = "C++";
+                topicDesc = "ngôn ngữ C++, cấu trúc dữ liệu & giải thuật";
+            }
+            else if (lower.Contains("c#") || lower.Contains(".net") || lower.Contains("csharp"))
+            {
+                language = "C# / .NET";
+                topicDesc = "ngôn ngữ C#, .NET và lập trình hướng đối tượng (OOP)";
+            }
+            else if (lower.Contains("javascript") || lower.Contains("js") || lower.Contains("react") || lower.Contains("node"))
+            {
+                language = "JavaScript / React";
+                topicDesc = "JavaScript, React và lập trình Web";
+            }
+            else if (lower.Contains("html") || lower.Contains("css"))
+            {
+                language = "HTML / CSS";
+                topicDesc = "thiết kế giao diện web với HTML/CSS responsive";
+            }
+            else if (lower.Contains("sql") || lower.Contains("database") || lower.Contains("cơ sở dữ liệu"))
+            {
+                language = "SQL / Database";
+                topicDesc = "truy vấn SQL và thiết kế cơ sở dữ liệu";
+            }
+            else if (lower.Contains("php"))
+            {
+                language = "PHP";
+                topicDesc = "ngôn ngữ PHP và phát triển web backend";
+            }
+            else if (lower.Contains("flutter") || lower.Contains("dart"))
+            {
+                language = "Flutter";
+                topicDesc = "phát triển ứng dụng di động Flutter";
+            }
+
             return new JobDraftDto(
-                Title: "Hỗ trợ giải & code bài tập C# / .NET",
+                Title: $"Hỗ trợ giải & code bài tập {language}",
                 Category: "helper",
-                Description: "Cần bạn sinh viên hoặc lập trình viên am hiểu C# và lập trình hướng đối tượng (OOP) hỗ trợ giải bài tập lớn. Yêu cầu viết code sạch, chú thích logic rõ ràng, kiểm tra chạy không lỗi và giải thích cách hoạt động.",
+                Description: $"Cần bạn sinh viên hoặc lập trình viên am hiểu {topicDesc} hỗ trợ giải và viết code bài tập lớn. Yêu cầu viết code sạch, chú thích logic rõ ràng, kiểm tra chạy không lỗi và hướng dẫn cách chạy chương trình.",
                 EstimatedPrice: 100000,
                 IsUrgent: false);
         }
 
-        // Chủ đề 2: Dọn dẹp phòng trọ / KTX
-        if (lower.Contains("dọn") || lower.Contains("vệ sinh") || lower.Contains("phòng trọ") || lower.Contains("nhà") || lower.Contains("rác"))
+        // 2. Gia sư / Kèm học các môn khác
+        if (lower.Contains("tiếng anh") || lower.Contains("english") || lower.Contains("ielts") || lower.Contains("toeic"))
         {
             return new JobDraftDto(
-                Title: "Dọn dẹp phòng trọ cuối tuần",
-                Category: "cleaning",
-                Description: "Cần 1 bạn sinh viên phụ quét dọn phòng trọ, lau sàn, cọ rửa bồn rửa/toilet và gom rác sạch sẽ trước khi trả phòng. Thời gian làm khoảng 1.5 - 2 tiếng, đồ dùng vệ sinh có sẵn tại phòng.",
+                Title: "Gia sư Tiếng Anh kèm ôn tập / giao tiếp",
+                Category: "helper",
+                Description: "Cần bạn sinh viên có phát âm chuẩn hoặc chứng chỉ hỗ trợ kèm tiếng Anh 1-1 theo buổi, sửa lỗi phát âm và hướng dẫn làm bài tập.",
                 EstimatedPrice: 120000,
                 IsUrgent: false);
         }
 
-        // Chủ đề 3: Giao hàng / Giao tài liệu / Mua hộ
+        if (lower.Contains("toán") || lower.Contains("lý") || lower.Contains("hóa") || lower.Contains("gia sư"))
+        {
+            return new JobDraftDto(
+                Title: "Gia sư kèm học bài tập theo buổi",
+                Category: "helper",
+                Description: "Cần bạn sinh viên có kiến thức vững hỗ trợ giải đáp bài tập và ôn tập kiến thức, thái độ nhiệt tình, kiên nhẫn giảng giải.",
+                EstimatedPrice: 100000,
+                IsUrgent: false);
+        }
+
+        if (lower.Contains("excel") || lower.Contains("word") || lower.Contains("slide") || lower.Contains("powerpoint") || lower.Contains("nhập liệu"))
+        {
+            return new JobDraftDto(
+                Title: "Hỗ trợ làm slide PowerPoint / Nhập liệu Excel",
+                Category: "helper",
+                Description: "Cần một bạn thành thạo tin học văn phòng hỗ trợ thiết kế slide thuyết trình hoặc xử lý bảng tính dữ liệu nhanh chóng và đẹp mắt.",
+                EstimatedPrice: 80000,
+                IsUrgent: false);
+        }
+
+        // 3. Dọn dẹp phòng trọ / KTX
+        if (lower.Contains("dọn") || lower.Contains("vệ sinh") || lower.Contains("phòng trọ") || lower.Contains("nhà") || lower.Contains("rác") || lower.Contains("lau"))
+        {
+            return new JobDraftDto(
+                Title: "Dọn dẹp phòng trọ / KTX cuối tuần",
+                Category: "cleaning",
+                Description: "Cần 1 bạn sinh viên phụ quét dọn phòng, lau sàn, cọ rửa bồn rửa/toilet và gom rác sạch sẽ trước khi trả phòng. Thời gian làm khoảng 1.5 - 2 tiếng, đồ dùng vệ sinh có sẵn tại phòng.",
+                EstimatedPrice: 120000,
+                IsUrgent: false);
+        }
+
+        // 4. Giao hàng / Giao tài liệu / Mua hộ
         if (lower.Contains("giao") || lower.Contains("ship") || lower.Contains("tài liệu") || lower.Contains("đồ án") || lower.Contains("cơm") || lower.Contains("mua"))
         {
             return new JobDraftDto(
@@ -447,7 +532,7 @@ Trả về JSON thuần duy nhất:
                 IsUrgent: true);
         }
 
-        // Chủ đề 4: Máy tính / Laptop / Cài Win / Phần mềm
+        // 5. Máy tính / Laptop / Cài Win / Phần mềm
         if (lower.Contains("laptop") || lower.Contains("máy tính") || lower.Contains("win") || lower.Contains("office") || lower.Contains("quạt") || lower.Contains("sửa"))
         {
             return new JobDraftDto(
@@ -458,8 +543,8 @@ Trả về JSON thuần duy nhất:
                 IsUrgent: false);
         }
 
-        // Chủ đề 5: Chuyển trọ / Bê đồ / Phụ việc shop
-        if (lower.Contains("chuyển") || lower.Contains("bê") || lower.Contains("vác") || lower.Contains("đồ") || lower.Contains("shop"))
+        // 6. Chuyển trọ / Bê đồ / Phụ việc shop
+        if (lower.Contains("chuyển") || lower.Contains("bê") || lower.Contains("vác") || lower.Contains("đồ"))
         {
             return new JobDraftDto(
                 Title: "Phụ dọn & chuyển đồ phòng trọ",
@@ -469,14 +554,30 @@ Trả về JSON thuần duy nhất:
                 IsUrgent: false);
         }
 
-        // Mặc định cho mọi yêu cầu khác
-        var cleanTitle = userPrompt.Length > 45 ? userPrompt[..45] + "..." : userPrompt;
+        // Mặc định cho mọi yêu cầu khác: tự động lấy chủ đề thực tế từ text người dùng
+        var cleanTopic = CleanUserPrompt(userPrompt);
         return new JobDraftDto(
-            Title: $"Nhờ hỗ trợ: {cleanTitle}",
+            Title: $"Cần hỗ trợ: {cleanTopic}",
             Category: "helper",
             Description: $"Yêu cầu công việc: {userPrompt}.\nCần bạn sinh viên nhận việc hỗ trợ hoàn thành cẩn thận, đúng giờ và nhiệt tình.",
             EstimatedPrice: 80000,
             IsUrgent: false);
+    }
+
+    private static string CleanUserPrompt(string text)
+    {
+        var cleaned = text.Trim();
+        var prefixes = new[] { "tạo việc", "đăng việc", "cần tìm", "nhờ người", "cần người", "tìm người", "viết bài", "giúp tôi", "mình cần", "hỗ trợ" };
+        foreach (var p in prefixes)
+        {
+            if (cleaned.StartsWith(p, StringComparison.OrdinalIgnoreCase))
+            {
+                cleaned = cleaned[p.Length..].Trim();
+            }
+        }
+        if (string.IsNullOrWhiteSpace(cleaned)) cleaned = text.Trim();
+        if (cleaned.Length > 45) cleaned = cleaned[..45] + "...";
+        return char.ToUpper(cleaned[0]) + cleaned[1..];
     }
 
     private static JobDraftDto NormalizeDraft(JobDraftDto draft)
