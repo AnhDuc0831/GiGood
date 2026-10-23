@@ -11,11 +11,6 @@ public static class DevSeed
 
     public static async Task SeedDevAuthAsync(this WebApplication app)
     {
-        if (!app.Environment.IsDevelopment())
-        {
-            return;
-        }
-
         try
         {
             using var scope = app.Services.CreateScope();
@@ -49,6 +44,47 @@ public static class DevSeed
                     Bio = "Thợ sửa chữa vặt & giao hàng",
                     Availability = "all-day",
                     Vehicle = "motorbike",
+                    RatingAvg = 4.8,
+                    ProfileCompleted = true,
+                });
+                seeded = true;
+            }
+
+            // Seed Tasker tại Đà Nẵng (Hoà Xuân, Cẩm Lệ) để phục vụ tìm Tasker địa phương
+            if (!await db.Users.AnyAsync(u => u.Phone == "0923456789"))
+            {
+                db.Users.Add(new User
+                {
+                    Phone = "0923456789",
+                    Name = "Đức Huy",
+                    PasswordHash = hasher.Hash(DemoPassword),
+                    CurrentRole = "tasker",
+                    Location = "Hoà Xuân, Cẩm Lệ, Đà Nẵng",
+                    Skills = "[\"cleaning\", \"delivery\", \"helper\"]",
+                    Bio = "Sinh viên ĐH Bách Khoa ĐN, nhận giao hàng nhanh và dọn dẹp quanh Hoà Xuân, Cẩm Lệ",
+                    Availability = "all-day",
+                    Vehicle = "motorbike",
+                    RatingAvg = 4.9,
+                    ProfileCompleted = true,
+                });
+                seeded = true;
+            }
+
+            if (!await db.Users.AnyAsync(u => u.Phone == "0934567890"))
+            {
+                db.Users.Add(new User
+                {
+                    Phone = "0934567890",
+                    Name = "Quang Minh",
+                    PasswordHash = hasher.Hash(DemoPassword),
+                    CurrentRole = "tasker",
+                    Location = "Quận Cẩm Lệ, Đà Nẵng",
+                    Skills = "[\"repair\", \"helper\"]",
+                    Bio = "Kỹ thuật máy tính, nhận vệ sinh laptop, cài win và hỗ trợ bài tập lập trình",
+                    Availability = "afternoon",
+                    Vehicle = "motorbike",
+                    RatingAvg = 4.8,
+                    ProfileCompleted = true,
                 });
                 seeded = true;
             }
@@ -79,6 +115,8 @@ public static class DevSeed
                      {
                          ("0901234567", 1_420_000m),
                          ("0912345678", 2_850_000m),
+                         ("0923456789", 1_500_000m),
+                         ("0934567890", 1_800_000m),
                      })
             {
                 var user = await db.Users.SingleOrDefaultAsync(u => u.Phone == phone);
