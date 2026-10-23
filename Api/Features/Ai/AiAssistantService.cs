@@ -257,7 +257,7 @@ Trả về duy nhất JSON thuần (KHÔNG dùng markdown ```json, KHÔNG có v�
         if (isSeeker)
         {
             var jobsList = string.Join("\n", userJobs.Select(j => $"• [JobId: {j.Id}] '{j.Title}' (Trạng thái: {j.Status}, Giá: {j.Price:N0}đ)"));
-            var taskersList = string.Join("\n", taskers.Select(t => $"• [TaskerId: {t.Id}] Tên: '{t.Name}' - Đánh giá: {t.RatingAvg:F1}★ - Kỹ năng: {t.Skills ?? "[]"} - Giới thiệu: '{t.Bio ?? "N/A"}'"));
+            var taskersList = string.Join("\n", taskers.Select(t => $"• [TaskerId: {t.Id}] Tên: '{t.Name}' - Đánh giá: {t.RatingAvg:F1}★ - Khu vực/Địa chỉ: '{t.Location ?? "N/A"}' - Kỹ năng: {t.Skills ?? "[]"} - Giới thiệu: '{t.Bio ?? "N/A"}' - Phương tiện: '{t.Vehicle ?? "N/A"}'"));
             dbContext = $@"
 DỮ LIỆU DATABASE THỰC TẾ CỦA HỆ THỐNG GIGOOD:
 - Danh sách công việc của Seeker:
@@ -359,8 +359,12 @@ Trả về JSON thuần duy nhất:
         if (isSeeker && isFindTaskerIntent)
         {
             var relevantJob = userJobs.FirstOrDefault(j => j.Status == JobStatus.Open) ?? userJobs.FirstOrDefault();
+            var promptLower = message.ToLowerInvariant();
             var matched = taskers
-                .OrderByDescending(t => t.RatingAvg)
+                .OrderByDescending(t =>
+                    (!string.IsNullOrEmpty(t.Location) && (promptLower.Contains(t.Location.ToLowerInvariant()) || (promptLower.Contains("hoà xuân") && t.Location.ToLowerInvariant().Contains("đà nẵng")))) ||
+                    (!string.IsNullOrEmpty(t.Bio) && promptLower.Contains(t.Bio.ToLowerInvariant())) ? 1 : 0)
+                .ThenByDescending(t => t.RatingAvg)
                 .Take(3)
                 .Select(t => new TaskerRecommendationDto(
                     t.Id,
@@ -369,7 +373,9 @@ Trả về JSON thuần duy nhất:
                     t.RatingAvg,
                     ParseSkills(t.Skills),
                     t.Bio,
-                    MatchReason: $"Đánh giá cao {t.RatingAvg:F1}★, kỹ năng phù hợp và có phản hồi nhanh.",
+                    MatchReason: !string.IsNullOrEmpty(t.Location)
+                        ? $"Hoạt động tại {t.Location}, đánh giá {t.RatingAvg:F1}★ uy tín và kỹ năng phù hợp."
+                        : $"Đánh giá cao {t.RatingAvg:F1}★, kỹ năng phù hợp và có phản hồi nhanh.",
                     JobId: relevantJob?.Id))
                 .ToList();
 
