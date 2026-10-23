@@ -190,6 +190,7 @@ export default function JobDetailScreen() {
     try {
       await reportJob(job.id)
       showToast('Đã báo hoàn thành! Đang chờ khách xác nhận.', 'success')
+      setRatingJobId(job.id)
     } catch (error) {
       showToast(getApiErrorMessage(error, 'Không thể báo hoàn thành.'), 'error')
     }
@@ -583,7 +584,7 @@ export default function JobDetailScreen() {
       <RatingSheet
         visible={!!ratingJobId}
         jobId={ratingJobId ?? ''}
-        revieweeName="Người nhận việc"
+        revieweeName={isOwner ? "Người nhận việc" : (job?.owner.name || "Khách hàng")}
         onClose={() => setRatingJobId(null)}
         onSubmitted={() => setRatingJobId(null)}
       />

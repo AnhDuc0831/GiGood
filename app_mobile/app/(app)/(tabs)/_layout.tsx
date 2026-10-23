@@ -8,11 +8,11 @@ type Role = 'seeker' | 'tasker'
 const ALL_TABS: { name: string; label: string; icon: React.ComponentProps<typeof FontAwesome>['name']; roles: Role[] }[] = [
   { name: 'post',     label: 'Đăng việc',    icon: 'plus-circle', roles: ['seeker'] },
   { name: 'jobs',     label: 'Việc của tôi', icon: 'list',        roles: ['seeker'] },
-  { name: 'chat',     label: 'Tin nhắn',     icon: 'comments',    roles: ['seeker', 'tasker'] },
-  { name: 'history',  label: 'Lịch sử',      icon: 'file-text',   roles: ['seeker'] },
   { name: 'board',    label: 'Bảng việc',    icon: 'map-marker',  roles: ['tasker'] },
   { name: 'active',   label: 'Đã nhận',      icon: 'briefcase',   roles: ['tasker'] },
+  { name: 'history',  label: 'Lịch sử',      icon: 'file-text',   roles: ['seeker', 'tasker'] },
   { name: 'earnings', label: 'Thu nhập',     icon: 'money',       roles: ['tasker'] },
+  { name: 'chat',     label: 'Tin nhắn',     icon: 'comments',    roles: ['seeker', 'tasker'] },
 ]
 
 export default function TabLayout() {

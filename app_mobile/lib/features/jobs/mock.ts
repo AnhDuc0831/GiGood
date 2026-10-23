@@ -64,6 +64,10 @@ let mockJobs: JobModel[] = INITIAL_JOBS.map(fromSeed)
 const mockJobWorkers = new Map<string, string>()
 let nextMockId = 1
 
+export function mockGetJobWorker(jobId: string): string | null {
+  return mockJobWorkers.get(jobId) ?? null
+}
+
 /** Seed jobs belong to the demo seeker: stamp the signed-in user so owner actions work. */
 function stampOwner(job: JobModel, viewer: MockViewer): JobModel {
   if (!viewer || viewer.role !== 'seeker' || job.owner.id !== MOCK_OWNER_ID) return job

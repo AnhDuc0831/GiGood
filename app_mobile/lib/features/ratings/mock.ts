@@ -1,5 +1,5 @@
 import { mockGetEscrow } from '../wallet/mock'
-import { mockGetJob, mockListJobs } from '../jobs/mock'
+import { mockGetJob, mockGetJobWorker, mockListJobs } from '../jobs/mock'
 import type { MockViewer } from '../jobs/mock'
 import type {
   CreateRatingBody,
@@ -26,8 +26,10 @@ function mockApiError(status: number, detail: string): Error {
 
 function activePayeeId(jobId: string): string | null {
   const escrow = mockGetEscrow(jobId)
-  if (!escrow) return null
-  return escrow.status === 'Held' || escrow.status === 'Released' ? escrow.payeeId : null
+  if (escrow && (escrow.status === 'Held' || escrow.status === 'Released')) {
+    return escrow.payeeId
+  }
+  return mockGetJobWorker(jobId)
 }
 
 /** Mirrors `ReviewService.CreateAsync` (Done check, participant check, unique reviewer). */
@@ -39,15 +41,17 @@ export function mockCreateRating(body: CreateRatingBody, viewer: MockViewer): Re
 
   const job = mockGetJob(body.jobId, viewer)
   if (!job) throw mockApiError(404, 'Không tìm thấy công việc.')
-  if (job.status !== 'Done') {
-    throw mockApiError(400, 'Công việc chưa hoàn thành, chưa thể đánh giá.')
-  }
 
   const payeeId = activePayeeId(job.id)
   const isOwner = job.owner.id === viewer.id
   const isPayee = payeeId === viewer.id
   if (!isOwner && !isPayee) {
     throw mockApiError(403, 'Bạn không phải người tham gia công việc này.')
+  }
+
+  // Allow rating if job is Done, OR if tasker (isPayee) has reported completion
+  if (job.status !== 'Done' && !(isPayee && job.isCompletedReported)) {
+    throw mockApiError(400, 'Công việc chưa hoàn thành, chưa thể đánh giá.')
   }
 
   const revieweeId = isOwner ? payeeId : job.owner.id

@@ -145,7 +145,7 @@ public static class RatingsEndpoints
 
         var jobsDone = await db.Jobs.CountAsync(
             j => j.Status == JobStatus.Done
-                && (j.OwnerId == id || db.Escrows.Any(e => e.JobId == j.Id && e.PayeeId == id)),
+                && (j.OwnerId == id || db.Escrows.Any(e => e.JobId == j.Id && e.PayeeId == id) || db.JobApplications.Any(a => a.JobId == j.Id && a.WorkerId == id && a.Status == "Done")),
             ct);
 
         return TypedResults.Ok(new UserRatingResponse(avg, count, jobsDone));

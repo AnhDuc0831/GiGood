@@ -96,7 +96,7 @@ public static class JobsEndpoints
 
             // Task 06: owner's own jobs + jobs where the caller is the accepted tasker
             query = query.Where(j => j.OwnerId == me
-                || db.JobApplications.Any(a => a.JobId == j.Id && a.WorkerId == me && a.Status == "Accepted"));
+                || db.JobApplications.Any(a => a.JobId == j.Id && a.WorkerId == me && (a.Status == "Accepted" || a.Status == "Done")));
         }
 
         if (statusFilter is { } statusValue)

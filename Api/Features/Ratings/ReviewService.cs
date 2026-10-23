@@ -27,19 +27,33 @@ public sealed class ReviewService(ILogger<ReviewService> logger)
 {
     private const int CommentMaxLength = 1000;
 
-    // Unique Escrows(JobId) makes the payee single-valued.
-    public static Task<Guid?> GetPayeeIdAsync(AppDbContext db, Guid jobId, CancellationToken ct) =>
-        db.Escrows.AsNoTracking()
+    // Unique Escrows(JobId) makes the payee single-valued; fallback to JobApplications.
+    public static async Task<Guid?> GetPayeeIdAsync(AppDbContext db, Guid jobId, CancellationToken ct)
+    {
+        var escrowPayee = await db.Escrows.AsNoTracking()
             .Where(e => e.JobId == jobId && (e.Status == EscrowStatus.Held || e.Status == EscrowStatus.Released))
             .Select(e => (Guid?)e.PayeeId)
             .SingleOrDefaultAsync(ct);
+
+        if (escrowPayee is not null)
+        {
+            return escrowPayee;
+        }
+
+        return await db.JobApplications.AsNoTracking()
+            .Where(a => a.JobId == jobId && (a.Status == "Accepted" || a.Status == "Done"))
+            .Select(a => (Guid?)a.WorkerId)
+            .FirstOrDefaultAsync(ct);
+    }
 
     // Reviews received by `userId`: rows on their jobs written by the other participant.
     public static IQueryable<Review> ReceivedBy(IQueryable<Review> source, AppDbContext db, Guid userId) =>
         source.Where(r => r.ReviewerId != userId
             && (db.Jobs.Any(j => j.Id == r.JobId && j.OwnerId == userId)
                 || db.Escrows.Any(e => e.JobId == r.JobId && e.PayeeId == userId
-                    && (e.Status == EscrowStatus.Held || e.Status == EscrowStatus.Released))));
+                    && (e.Status == EscrowStatus.Held || e.Status == EscrowStatus.Released))
+                || db.JobApplications.Any(a => a.JobId == r.JobId && a.WorkerId == userId
+                    && (a.Status == "Accepted" || a.Status == "Done"))));
 
     public async Task<ReviewCreateResult> CreateAsync(
         AppDbContext db,
@@ -55,11 +69,6 @@ public sealed class ReviewService(ILogger<ReviewService> logger)
             return new ReviewCreateResult(ReviewCreateStatus.JobNotFound);
         }
 
-        if (job.Status != JobStatus.Done)
-        {
-            return new ReviewCreateResult(ReviewCreateStatus.JobNotDone);
-        }
-
         var payeeId = await GetPayeeIdAsync(db, jobId, ct);
         var isOwner = job.OwnerId == reviewerId;
         var isPayee = payeeId == reviewerId;
@@ -67,6 +76,12 @@ public sealed class ReviewService(ILogger<ReviewService> logger)
         if (!isOwner && !isPayee)
         {
             return new ReviewCreateResult(ReviewCreateStatus.NotParticipant);
+        }
+
+        // Allow review if job is Done, OR if tasker (isPayee) has reported completion
+        if (job.Status != JobStatus.Done && !(isPayee && job.IsCompletedReported))
+        {
+            return new ReviewCreateResult(ReviewCreateStatus.JobNotDone);
         }
 
         var revieweeId = isOwner ? payeeId : job.OwnerId;
