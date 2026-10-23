@@ -11,10 +11,18 @@ export type JobOwner = {
   ratingAvg: number
 }
 
+export type JobTasker = {
+  id: string
+  name: string
+  avatarUrl: string | null
+  ratingAvg: number
+}
+
 /** Mirrors `JobDto` from `Api/Features/Jobs/Dtos.cs`. */
 export type JobModel = {
   id: string
   owner: JobOwner
+  tasker?: JobTasker | null
   title: string
   description: string
   category: Category

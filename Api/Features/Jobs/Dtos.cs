@@ -23,6 +23,7 @@ public sealed record UpdateJobRequest(
     double? Lng);
 
 public sealed record JobOwnerDto(Guid Id, string Name, string? AvatarUrl, double RatingAvg);
+public sealed record JobTaskerDto(Guid Id, string Name, string? AvatarUrl, double RatingAvg);
 
 // `distanceKm` is only set for lat/lng queries.
 public sealed record JobDto(
@@ -41,7 +42,8 @@ public sealed record JobDto(
     List<string> Images,
     bool IsUrgent,
     DateTime CreatedAt,
-    DateTime UpdatedAt);
+    DateTime UpdatedAt,
+    JobTaskerDto? Tasker = null);
 
 public sealed record JobListResponse(List<JobDto> Jobs, string? NextCursor);
 

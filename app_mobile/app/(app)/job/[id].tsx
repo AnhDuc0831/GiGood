@@ -457,6 +457,7 @@ export default function JobDetailScreen() {
                 </View>
               )}
               <View className="flex-1">
+                <Text className="text-[10px] text-gray-400 font-medium">Người đăng việc</Text>
                 <Text className="font-bold text-sm text-gray-800">{job.owner.name}</Text>
                 <Text className="text-[11px] text-amber-500 font-bold mt-0.5">
                   <FontAwesome name="star" size={10} />{' '}
@@ -467,6 +468,34 @@ export default function JobDetailScreen() {
                 <Text className="text-[10px] font-bold text-orange-500 bg-orange-50 px-2 py-0.5 rounded-full">Bạn</Text>
               )}
             </View>
+
+            {job.tasker && (
+              <View className="bg-white border border-teal-200 rounded-2xl p-4 flex-row items-center space-x-3">
+                {resolveImageUrl(job.tasker.avatarUrl) ? (
+                  <Image
+                    source={{ uri: resolveImageUrl(job.tasker.avatarUrl) ?? '' }}
+                    className="w-11 h-11 rounded-full border border-teal-200"
+                  />
+                ) : (
+                  <View className="w-11 h-11 rounded-full bg-teal-100 items-center justify-center">
+                    <Text className="text-teal-700 font-extrabold text-sm">
+                      {(job.tasker.name || 'T').charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                )}
+                <View className="flex-1">
+                  <Text className="text-[10px] text-teal-600 font-medium">Người nhận việc (Tasker)</Text>
+                  <Text className="font-bold text-sm text-gray-800">{job.tasker.name}</Text>
+                  <Text className="text-[11px] text-amber-500 font-bold mt-0.5">
+                    <FontAwesome name="star" size={10} />{' '}
+                    {job.tasker.ratingAvg > 0 ? job.tasker.ratingAvg.toFixed(1) : 'Chưa có đánh giá'}
+                  </Text>
+                </View>
+                {!isOwner && (
+                  <Text className="text-[10px] font-bold text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full">Bạn</Text>
+                )}
+              </View>
+            )}
 
             <TouchableOpacity onPress={handleOpenChat} disabled={isOpening}
               className={`bg-teal-600 py-3 rounded-2xl items-center flex-row justify-center space-x-2 ${isOpening ? 'opacity-60' : ''}`}>
@@ -584,7 +613,7 @@ export default function JobDetailScreen() {
       <RatingSheet
         visible={!!ratingJobId}
         jobId={ratingJobId ?? ''}
-        revieweeName={isOwner ? "Người nhận việc" : (job?.owner.name || "Khách hàng")}
+        revieweeName={isOwner ? (job?.tasker?.name || "Người nhận việc") : (job?.owner.name || "Khách hàng")}
         onClose={() => setRatingJobId(null)}
         onSubmitted={() => setRatingJobId(null)}
       />

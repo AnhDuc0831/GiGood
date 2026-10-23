@@ -70,16 +70,33 @@ export function mockGetJobWorker(jobId: string): string | null {
 
 /** Seed jobs belong to the demo seeker: stamp the signed-in user so owner actions work. */
 function stampOwner(job: JobModel, viewer: MockViewer): JobModel {
-  if (!viewer || viewer.role !== 'seeker' || job.owner.id !== MOCK_OWNER_ID) return job
-  return {
-    ...job,
-    owner: {
-      ...job.owner,
-      id: viewer.id,
-      name: viewer.name,
-      avatarUrl: viewer.avatarUrl ?? job.owner.avatarUrl,
-    },
+  let result = job
+  if (viewer && viewer.role === 'seeker' && job.owner.id === MOCK_OWNER_ID) {
+    result = {
+      ...result,
+      owner: {
+        ...result.owner,
+        id: viewer.id,
+        name: viewer.name,
+        avatarUrl: viewer.avatarUrl ?? job.owner.avatarUrl,
+      },
+    }
   }
+
+  const workerId = mockJobWorkers.get(job.id)
+  if (workerId) {
+    result = {
+      ...result,
+      tasker: {
+        id: workerId,
+        name: viewer && viewer.id === workerId ? viewer.name : 'Văn Thành (Tasker)',
+        avatarUrl: null,
+        ratingAvg: 4.9,
+      },
+    }
+  }
+
+  return result
 }
 
 export function mockListJobs(params: JobListParams = {}, viewer: MockViewer = null): JobListResponse {

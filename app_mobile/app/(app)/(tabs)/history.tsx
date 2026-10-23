@@ -171,7 +171,7 @@ export default function HistoryScreen() {
                 </Text>
               </View>
               <Text className="text-[11px] text-gray-500">
-                {isSeeker ? `Người nhận: Tasker` : `Khách: ${job.owner.name}`}
+                {isSeeker ? `Người nhận: ${job.tasker?.name || "Tasker"}` : `Khách: ${job.owner.name}`}
               </Text>
               <View className="flex-row items-center justify-between pt-1 border-t border-gray-50">
                 <Text className="text-[11px] text-gray-400">
@@ -234,7 +234,7 @@ export default function HistoryScreen() {
                 </Text>
               </View>
               <Text className="text-[11px] text-gray-500">
-                {isOwner ? 'Người nhận: Tasker' : `Khách: ${job.owner.name}`}
+                {isOwner ? `Người nhận: ${job.tasker?.name || 'Tasker'}` : `Khách: ${job.owner.name}`}
               </Text>
               <View className="flex-row items-center justify-between pt-1 border-t border-gray-50">
                 <Text className="text-[11px] text-gray-400">
@@ -271,7 +271,7 @@ export default function HistoryScreen() {
         revieweeName={
           ratingJob && ratingJob.owner.id !== profile?.id
             ? ratingJob.owner.name
-            : 'Người nhận việc'
+            : (ratingJob?.tasker?.name || 'Người nhận việc')
         }
         onClose={() => setRatingJob(null)}
         onSubmitted={() => setRatingJob(null)}

@@ -136,7 +136,25 @@ public static class JobsEndpoints
                 .Take(pageSize + 1)
                 .ToListAsync(ct);
 
-            var page = rows.Take(pageSize).Select(j => ToDto(j)).ToList();
+            var pageRows = rows.Take(pageSize).ToList();
+            var nonOpenJobIds = pageRows.Where(j => j.Status != JobStatus.Open).Select(j => j.Id).ToList();
+            Dictionary<Guid, JobTaskerDto> taskersByJob = new();
+            if (nonOpenJobIds.Count > 0)
+            {
+                var workers = await db.JobApplications.AsNoTracking()
+                    .Where(a => nonOpenJobIds.Contains(a.JobId))
+                    .OrderByDescending(a => a.Status == "Done" || a.Status == "Accepted" ? 1 : 0)
+                    .ThenByDescending(a => a.CreatedAt)
+                    .Select(a => new { a.JobId, Worker = new JobTaskerDto(a.Worker.Id, a.Worker.Name, a.Worker.AvatarUrl, a.Worker.RatingAvg) })
+                    .ToListAsync(ct);
+
+                foreach (var w in workers)
+                {
+                    taskersByJob.TryAdd(w.JobId, w.Worker);
+                }
+            }
+
+            var page = pageRows.Select(j => ToDto(j, tasker: taskersByJob.GetValueOrDefault(j.Id))).ToList();
             var nextCursor = rows.Count > pageSize ? EncodeCursor(rows[pageSize - 1]) : null;
             return TypedResults.Ok(new JobListResponse(page, nextCursor));
         }
@@ -162,6 +180,23 @@ public static class JobsEndpoints
             .Take(GeoFetchCap)
             .ToListAsync(ct);
 
+        var nonOpenCandidateIds = candidates.Where(x => x.Status != JobStatus.Open).Select(x => x.Id).ToList();
+        Dictionary<Guid, JobTaskerDto> geoTaskers = new();
+        if (nonOpenCandidateIds.Count > 0)
+        {
+            var workers = await db.JobApplications.AsNoTracking()
+                .Where(a => nonOpenCandidateIds.Contains(a.JobId))
+                .OrderByDescending(a => a.Status == "Done" || a.Status == "Accepted" ? 1 : 0)
+                .ThenByDescending(a => a.CreatedAt)
+                .Select(a => new { a.JobId, Worker = new JobTaskerDto(a.Worker.Id, a.Worker.Name, a.Worker.AvatarUrl, a.Worker.RatingAvg) })
+                .ToListAsync(ct);
+
+            foreach (var w in workers)
+            {
+                geoTaskers.TryAdd(w.JobId, w.Worker);
+            }
+        }
+
         var jobs = candidates
             .Select(j => (Job: j, DistanceKm: (j.Lat != null && j.Lng != null) ? (double?)HaversineKm(centerLat, centerLng, j.Lat.Value, j.Lng.Value) : null))
             .Where(x => x.DistanceKm == null || x.DistanceKm.Value <= radiusKm)
@@ -171,7 +206,7 @@ public static class JobsEndpoints
             .ThenByDescending(x => x.Job.CreatedAt)
             .ThenByDescending(x => x.Job.Id)
             .Take(pageSize)
-            .Select(x => ToDto(x.Job, x.DistanceKm.HasValue ? Math.Round(x.DistanceKm.Value, 2) : null))
+            .Select(x => ToDto(x.Job, x.DistanceKm.HasValue ? Math.Round(x.DistanceKm.Value, 2) : null, geoTaskers.GetValueOrDefault(x.Job.Id)))
             .ToList();
 
         return TypedResults.Ok(new JobListResponse(jobs, NextCursor: null));
@@ -265,9 +300,18 @@ public static class JobsEndpoints
             .Include(j => j.Images)
             .SingleOrDefaultAsync(j => j.Id == id, ct);
 
-        return job is null
-            ? TypedResults.NotFound(new ErrorResponse("Không tìm thấy công việc."))
-            : TypedResults.Ok(ToDto(job));
+        if (job is null)
+        {
+            return TypedResults.NotFound(new ErrorResponse("Không tìm thấy công việc."));
+        }
+
+        JobTaskerDto? tasker = null;
+        if (job.Status != JobStatus.Open)
+        {
+            tasker = await GetTaskerDtoAsync(db, job.Id, ct);
+        }
+
+        return TypedResults.Ok(ToDto(job, tasker: tasker));
     }
 
     private static async Task<Results<Ok<JobDto>, ValidationProblem, NotFound<ErrorResponse>, ProblemHttpResult, UnauthorizedHttpResult>> UpdateAsync(
@@ -756,7 +800,27 @@ public static class JobsEndpoints
 
     private static Conflict<ErrorResponse> Conflict(string message) => TypedResults.Conflict(new ErrorResponse(message));
 
-    private static JobDto ToDto(Job job, double? distanceKm = null) => new(
+    private static async Task<JobTaskerDto?> GetTaskerDtoAsync(AppDbContext db, Guid jobId, CancellationToken ct)
+    {
+        var appWorker = await db.JobApplications.AsNoTracking()
+            .Where(a => a.JobId == jobId)
+            .OrderByDescending(a => a.Status == "Done" || a.Status == "Accepted" ? 1 : 0)
+            .ThenByDescending(a => a.CreatedAt)
+            .Select(a => new JobTaskerDto(a.Worker.Id, a.Worker.Name, a.Worker.AvatarUrl, a.Worker.RatingAvg))
+            .FirstOrDefaultAsync(ct);
+
+        if (appWorker is not null)
+        {
+            return appWorker;
+        }
+
+        return await db.Escrows.AsNoTracking()
+            .Where(e => e.JobId == jobId && (e.Status == EscrowStatus.Held || e.Status == EscrowStatus.Released))
+            .Select(e => new JobTaskerDto(e.Payee.Id, e.Payee.Name, e.Payee.AvatarUrl, e.Payee.RatingAvg))
+            .FirstOrDefaultAsync(ct);
+    }
+
+    private static JobDto ToDto(Job job, double? distanceKm = null, JobTaskerDto? tasker = null) => new(
         job.Id,
         job.Owner != null
             ? new JobOwnerDto(job.Owner.Id, job.Owner.Name, job.Owner.AvatarUrl, job.Owner.RatingAvg)
@@ -774,7 +838,8 @@ public static class JobsEndpoints
         job.Images != null ? job.Images.Select(image => image.Url).ToList() : [],
         job.IsUrgent,
         job.CreatedAt,
-        job.UpdatedAt);
+        job.UpdatedAt,
+        tasker);
 
     // Inbound claim mapping may rename `sub`; same reading as AuthEndpoints.
     private static Guid? GetUserId(ClaimsPrincipal principal)
