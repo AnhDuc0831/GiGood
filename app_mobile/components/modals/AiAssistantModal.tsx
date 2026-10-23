@@ -39,6 +39,7 @@ export function AiAssistantModal({ visible, initialPrompt, onClose, onApplyDraft
   const [loading, setLoading] = useState(false)
   const [isConfigured, setIsConfigured] = useState(true)
   const listRef = useRef<FlatList>(null)
+  const handledPromptRef = useRef<string | null>(null)
 
   // Initialize greeting and handle initialPrompt
   useEffect(() => {
@@ -53,9 +54,12 @@ export function AiAssistantModal({ visible, initialPrompt, onClose, onApplyDraft
         setMessages([greeting])
       }
 
-      if (initialPrompt && initialPrompt.trim()) {
+      if (initialPrompt && initialPrompt.trim() && handledPromptRef.current !== initialPrompt) {
+        handledPromptRef.current = initialPrompt
         void handleSend(initialPrompt)
       }
+    } else {
+      handledPromptRef.current = null
     }
   }, [visible, initialPrompt, isSeeker, profile?.name])
 

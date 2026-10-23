@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Api.Data;
 using Api.Features.Auth;
 using Api.Features.Jobs;
@@ -22,6 +23,9 @@ public class AiAssistantService
     public bool IsConfigured => _gemini.IsConfigured;
     public string ModelName => _gemini.ModelName;
 
+    // =========================================================================
+    // 1. TỰ ĐỘNG SOẠN & ĐIỀN BÀI ĐĂNG VIỆC CHO SEEKER (DỰA TRÊN YÊU CẦU NGƯỜI DÙNG)
+    // =========================================================================
     public async Task<JobDraftDto> DraftJobAsync(string userPrompt, CancellationToken ct = default)
     {
         if (_gemini.IsConfigured)
@@ -30,237 +34,265 @@ public class AiAssistantService
             {
                 var prompt = $@"
 Bạn là trợ lý đăng việc thông minh cho ứng dụng GiGood (nền tảng kết nối micro-gig / việc làm vặt tại Việt Nam).
-Người dùng muốn đăng công việc với yêu cầu tóm tắt: ""{userPrompt}""
+Người dùng nhập yêu cầu: ""{userPrompt}""
 
 NHIỆM VỤ:
-Phân tích yêu cầu trên và tạo ra một bản thảo công việc chi tiết, chuyên nghiệp và thực tế.
-Danh mục (category) BẮT BUỘC chọn đúng 1 trong 4 key sau:
-- ""repair"": Sửa chữa vặt, kỹ thuật máy tính/điện thoại, cài phần mềm/cài Win, vệ sinh laptop
-- ""cleaning"": Dọn dẹp phòng trọ, vệ sinh nhà cửa, lau dọn
-- ""delivery"": Giao tài liệu, đồ án, giao hàng nhanh, mua hộ đồ ăn
-- ""helper"": Hỗ trợ việc vặt, code bài tập / gia sư, phụ việc shop / quán cafe, bốc vác chuyển trọ
+Tạo bản thảo công việc đầy đủ, rõ ràng và hấp dẫn.
+Danh mục (category) BẮT BUỘC chọn đúng 1 trong 4 loại sau:
+- 'repair': Kỹ thuật máy tính, vệ sinh laptop, cài Win/phần mềm, sửa chữa điện tử vặt
+- 'cleaning': Dọn dẹp phòng trọ, vệ sinh nhà cửa, lau dọn KTX
+- 'delivery': Giao hàng, giao tài liệu/đồ án, mua hộ đồ ăn
+- 'helper': Hỗ trợ code bài tập C#/CNTT, gia sư, phụ quán/shop, dọn chuyển đồ phòng trọ
 
 YÊU CẦU OUTPUT:
-Chỉ trả về JSON thuần (KHÔNG dùng markdown ```json, KHÔNG có văn bản nào khác ngoài JSON):
+Trả về duy nhất JSON thuần (KHÔNG có văn bản nào ngoài JSON, không markdown):
 {{
   ""title"": ""Tiêu đề ngắn gọn, rõ ràng (30-60 ký tự)"",
   ""category"": ""repair|cleaning|delivery|helper"",
-  ""description"": ""Mô tả công việc chi tiết: phạm vi công việc, kỹ năng/dụng cụ cần có, thời gian và địa điểm thực hiện..."",
+  ""description"": ""Mô tả công việc chi tiết: phạm vi công việc, kỹ năng cần có, thời gian và địa điểm thực hiện..."",
   ""estimatedPrice"": 100000,
   ""isUrgent"": false
 }}";
 
                 var rawResponse = await _gemini.GenerateTextAsync(prompt, temperature: 0.2, maxTokens: 1024, ct: ct);
-                var cleanJson = CleanJsonString(rawResponse);
-                var draft = JsonSerializer.Deserialize<JobDraftDto>(cleanJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                if (draft != null && !string.IsNullOrWhiteSpace(draft.Title))
+                var draft = ExtractJson<JobDraftDto>(rawResponse);
+                if (draft != null && !string.IsNullOrWhiteSpace(draft.Title) && !string.IsNullOrWhiteSpace(draft.Category))
                 {
-                    return draft;
+                    return NormalizeDraft(draft);
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to draft job via Gemini. Falling back to local template generator.");
+                _logger.LogWarning(ex, "Gemini draft failed, using local smart generator.");
             }
         }
 
-        // Local Fallback Generator
-        return GenerateLocalJobDraft(userPrompt);
+        return GenerateSmartLocalJobDraft(userPrompt);
     }
 
+    // =========================================================================
+    // 2. CHATBOX AI ĐỌC DỮ LIỆU DATABASE ĐỂ HỖ TRỢ SEEKER & TASKER
+    // =========================================================================
     public async Task<AiChatResponse> ChatAsync(AiChatRequest request, Guid userId, string role, CancellationToken ct = default)
     {
         var isSeeker = string.Equals(role, "seeker", StringComparison.OrdinalIgnoreCase);
-        var lowerMsg = request.Message.Trim().ToLowerInvariant();
+        var message = request.Message.Trim();
+        var lower = message.ToLowerInvariant();
 
-        // 1. Fetch relevant DB context
+        // ---------------------------------------------------------------------
+        // BƯỚC 1: TRUY VẤN ĐỌC DỮ LIỆU THỰC TẾ TỪ POSTGRESQL DATABASE
+        // ---------------------------------------------------------------------
         List<Job> userJobs = [];
         List<Job> openJobs = [];
         List<User> taskers = [];
 
         if (isSeeker)
         {
+            // Seeker: Đọc các công việc Seeker đã đăng trong hệ thống
             userJobs = await _db.Jobs.AsNoTracking()
                 .Where(j => j.OwnerId == userId)
                 .OrderByDescending(j => j.CreatedAt)
                 .Take(5)
                 .ToListAsync(ct);
 
+            // Seeker: Đọc danh sách các Tasker có uy tín và kỹ năng từ bảng Users
             taskers = await _db.Users.AsNoTracking()
                 .Where(u => u.Skills != null || u.Bio != null || u.CurrentRole == "tasker")
                 .OrderByDescending(u => u.RatingAvg)
-                .Take(10)
+                .Take(15)
                 .ToListAsync(ct);
         }
         else
         {
+            // Tasker: ĐỌC TRỰC TIẾP CÁC CÔNG VIỆC ĐANG MỞ (STATUS = OPEN) TỪ DATABASE
             openJobs = await _db.Jobs.AsNoTracking()
                 .Include(j => j.Owner)
                 .Where(j => j.Status == JobStatus.Open && !j.Hidden)
                 .OrderByDescending(j => j.CreatedAt)
-                .Take(15)
+                .Take(20)
                 .ToListAsync(ct);
         }
 
-        // 2. Detect intent
+        // ---------------------------------------------------------------------
+        // BƯỚC 2: PHÂN TÍCH Ý ĐỊNH (INTENT RECOGNITION)
+        // ---------------------------------------------------------------------
         var isJobDraftIntent = isSeeker && (
-            lowerMsg.Contains("đăng việc") ||
-            lowerMsg.Contains("tạo việc") ||
-            lowerMsg.Contains("viết việc") ||
-            lowerMsg.Contains("điền form") ||
-            lowerMsg.Contains("code bài tập") ||
-            lowerMsg.Contains("c#") ||
-            lowerMsg.Contains("cần người") ||
-            lowerMsg.Contains("nhờ làm") ||
-            lowerMsg.Contains("tìm người dọn") ||
-            lowerMsg.Contains("giao giúp") ||
-            lowerMsg.Contains("tìm thợ"));
+            lower.Contains("đăng việc") ||
+            lower.Contains("tạo việc") ||
+            lower.Contains("viết việc") ||
+            lower.Contains("điền việc") ||
+            lower.Contains("điền form") ||
+            lower.Contains("code") ||
+            lower.Contains("c#") ||
+            lower.Contains("bài tập") ||
+            lower.Contains("cần người") ||
+            lower.Contains("nhờ làm") ||
+            lower.Contains("tìm người dọn") ||
+            lower.Contains("giao giúp") ||
+            lower.Contains("cần tìm") ||
+            lower.Contains("thuê người"));
 
         var isFindTaskerIntent = isSeeker && !isJobDraftIntent && (
-            lowerMsg.Contains("tìm tasker") ||
-            lowerMsg.Contains("gợi ý tasker") ||
-            lowerMsg.Contains("ai làm được") ||
-            lowerMsg.Contains("ai nhận việc") ||
-            lowerMsg.Contains("người nhận việc"));
+            lower.Contains("tìm tasker") ||
+            lower.Contains("gợi ý tasker") ||
+            lower.Contains("ai làm được") ||
+            lower.Contains("ai nhận việc") ||
+            lower.Contains("thợ giỏi") ||
+            lower.Contains("người nhận việc"));
+
+        var isCheckMyJobsIntent = isSeeker && !isJobDraftIntent && !isFindTaskerIntent && (
+            lower.Contains("việc của tôi") ||
+            lower.Contains("tiến độ") ||
+            lower.Contains("đã đăng") ||
+            lower.Contains("trạng thái"));
 
         var isFindJobsIntent = !isSeeker && (
-            lowerMsg.Contains("tìm việc") ||
-            lowerMsg.Contains("có việc") ||
-            lowerMsg.Contains("việc làm") ||
-            lowerMsg.Contains("nhận việc") ||
-            lowerMsg.Contains("giao hàng") ||
-            lowerMsg.Contains("máy tính") ||
-            lowerMsg.Contains("c#") ||
-            lowerMsg.Contains("dọn dẹp") ||
-            lowerMsg.Contains("gợi ý") ||
-            lowerMsg.Contains("quận"));
+            lower.Contains("tìm việc") ||
+            lower.Contains("có việc") ||
+            lower.Contains("việc làm") ||
+            lower.Contains("nhận việc") ||
+            lower.Contains("lọc việc") ||
+            lower.Contains("giao hàng") ||
+            lower.Contains("máy tính") ||
+            lower.Contains("c#") ||
+            lower.Contains("dọn dẹp") ||
+            lower.Contains("quận") ||
+            lower.Contains("lương"));
 
-        // If Gemini is configured, use Gemini for natural language reasoning with real DB context
+        // ---------------------------------------------------------------------
+        // BƯỚC 3: XỬ LÝ VỚI GEMINI AI HOẶC BỘ XỬ LÝ THÔNG MINH NỘI BỘ
+        // ---------------------------------------------------------------------
         if (_gemini.IsConfigured)
         {
             try
             {
-                return await ChatWithGeminiAsync(request, userId, role, isSeeker, isJobDraftIntent, isFindTaskerIntent, isFindJobsIntent, userJobs, openJobs, taskers, ct);
+                var geminiResponse = await ProcessWithGeminiAsync(
+                    message, isSeeker, isJobDraftIntent, isFindTaskerIntent, isFindJobsIntent, isCheckMyJobsIntent,
+                    userJobs, openJobs, taskers, ct);
+
+                if (geminiResponse != null && !string.IsNullOrWhiteSpace(geminiResponse.Reply))
+                {
+                    return geminiResponse;
+                }
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Gemini chat failed, falling back to local assistant.");
+                _logger.LogWarning(ex, "Gemini process failed. Falling back to local smart engine.");
             }
         }
 
-        // Local Smart Assistant Fallback
-        return ChatWithLocalEngine(request, role, isSeeker, isJobDraftIntent, isFindTaskerIntent, isFindJobsIntent, userJobs, openJobs, taskers);
+        // BỘ PHÂN TÍCH NỘI BỘ (LOCAL SMART ENGINE) - ĐẢM BẢO ỔN ĐỊNH 100%
+        return ProcessWithSmartLocalEngine(
+            message, isSeeker, isJobDraftIntent, isFindTaskerIntent, isFindJobsIntent, isCheckMyJobsIntent,
+            userJobs, openJobs, taskers);
     }
 
-    private async Task<AiChatResponse> ChatWithGeminiAsync(
-        AiChatRequest request,
-        Guid userId,
-        string role,
+    private async Task<AiChatResponse?> ProcessWithGeminiAsync(
+        string message,
         bool isSeeker,
         bool isJobDraftIntent,
         bool isFindTaskerIntent,
         bool isFindJobsIntent,
+        bool isCheckMyJobsIntent,
         List<Job> userJobs,
         List<Job> openJobs,
         List<User> taskers,
         CancellationToken ct)
     {
-        string dbContextDescription;
+        // Chuẩn bị dữ liệu từ Database để cung cấp cho Gemini
+        string dbContext;
         if (isSeeker)
         {
-            var jobsSummary = string.Join("\n", userJobs.Select(j => $"- ID: {j.Id}, Title: '{j.Title}', Status: {j.Status}, Price: {j.Price:N0}đ"));
-            var taskersSummary = string.Join("\n", taskers.Select(t => $"- ID: {t.Id}, Name: '{t.Name}', Rating: {t.RatingAvg:F1}*, Skills: {t.Skills ?? "[]"}, Bio: '{t.Bio ?? "N/A"}'"));
-            dbContextDescription = $@"
-Dữ liệu công việc của Seeker hiện tại trong hệ thống:
-{jobsSummary}
+            var jobsList = string.Join("\n", userJobs.Select(j => $"• [JobId: {j.Id}] '{j.Title}' (Trạng thái: {j.Status}, Giá: {j.Price:N0}đ)"));
+            var taskersList = string.Join("\n", taskers.Select(t => $"• [TaskerId: {t.Id}] Tên: '{t.Name}' - Đánh giá: {t.RatingAvg:F1}★ - Kỹ năng: {t.Skills ?? "[]"} - Giới thiệu: '{t.Bio ?? "N/A"}'"));
+            dbContext = $@"
+DỮ LIỆU DATABASE THỰC TẾ CỦA HỆ THỐNG GIGOOD:
+- Danh sách công việc của Seeker:
+{jobsList}
 
-Danh sách Tasker tiêu biểu trong hệ thống GiGood:
-{taskersSummary}";
+- Danh sách Tasker tiêu biểu trong Database:
+{taskersList}";
         }
         else
         {
-            var openJobsSummary = string.Join("\n", openJobs.Select(j => $"- ID: {j.Id}, Title: '{j.Title}', Category: {j.Category}, Price: {j.Price:N0}đ, Location: '{j.LocationText}', Desc: '{j.Description}'"));
-            dbContextDescription = $@"
-Danh sách các công việc ĐANG MỞ (Open) trong hệ thống GiGood:
-{openJobsSummary}";
+            var openJobsList = string.Join("\n", openJobs.Select(j => $"• [JobId: {j.Id}] Tiêu đề: '{j.Title}' | Danh mục: {j.Category} | Giá: {j.Price:N0}đ | Địa chỉ: '{j.LocationText ?? "Chưa có"}' | Mô tả: '{j.Description}'"));
+            dbContext = $@"
+DỮ LIỆU DATABASE THỰC TẾ - CÁC CÔNG VIỆC ĐANG MỞ (STATUS = OPEN):
+{openJobsList}";
         }
 
-        var systemPrompt = $@"
-Bạn là GiGood AI - Trợ lý ảo thông minh của nền tảng GiGood (nền tảng kết nối việc làm vặt / micro-gig tại Việt Nam).
-Vai trò của người dùng đang chat: {(isSeeker ? "Người thuê việc (Seeker)" : "Người nhận việc (Tasker)")}.
+        var prompt = $@"
+{GeminiClient.DatabaseSchema}
 
-THÔNG TIN DATABASE HIỆN TẠI TỪ HỆ THỐNG:
-{dbContextDescription}
+{dbContext}
 
-NHIỆM VỤ CỦA BẠN:
-1. Trả lời bằng tiếng Việt thân thiện, nhiệt tình, có cấu trúc rõ ràng.
-2. Dựa trên câu hỏi của người dùng và dữ liệu Database ở trên để tư vấn chính xác.
-3. Nếu Seeker muốn đăng việc hoặc nhờ viết mô tả công việc (ví dụ: 'Code bài tập C#', 'tìm người dọn trọ...'):
-   - Tạo trường `jobDraft` với đầy đủ: title, category (repair|cleaning|delivery|helper), description chi tiết, estimatedPrice, isUrgent.
-4. Nếu Seeker muốn tìm Tasker phù hợp:
-   - Dựa vào danh sách Tasker trong DB, chọn ra 1-3 Tasker phù hợp nhất và điền vào `taskerRecommendations`.
-5. Nếu Tasker muốn tìm việc hoặc hỏi công việc phù hợp:
-   - Dựa vào danh sách công việc ĐANG MỞ trong DB, chọn ra các công việc phù hợp với từ khóa/yêu cầu và điền vào `jobRecommendations` (kèm matchReason vì sao việc này hợp).
+VAI TRÒ NGƯỜI ĐANG CHAT: {(isSeeker ? "Seeker (Người đăng việc)" : "Tasker (Người nhận việc)")}
+CÂU HỎI CỦA NGƯỜI DÙNG: ""{message}""
 
-YÊU CẦU ĐỊNH DẠNG TRẢ VỀ:
-Trả về duy nhất JSON thuần (KHÔNG dùng markdown ```json):
+QUY TẮC PHẢN HỒI (RẤT QUAN TRỌNG):
+1. Bạn là Trợ lý AI GiGood. Trả lời bằng tiếng Việt thân thiện, nhiệt tình.
+2. NẾU SEEKER MUỐN ĐĂNG VIỆC (ví dụ: 'Code bài tập C#', 'Dọn phòng', 'Giao đồ'...):
+   - BẮT BUỘC tạo `jobDraft` với đầy đủ:
+     + title: Tiêu đề rõ ràng
+     + category: 'repair' | 'cleaning' | 'delivery' | 'helper'
+     + description: Mô tả chi tiết các yêu cầu, công cụ, hướng dẫn
+     + estimatedPrice: Giá đề xuất hợp lý bằng số nguyên
+     + isUrgent: boolean
+3. NẾU TASKER TÌM VIỆC THEO TỪ KHÓA / NGÔN NGỮ TỰ NHIÊN:
+   - Dựa vào danh sách công việc ĐANG MỞ trong Database ở trên, chọn ra các công việc phù hợp với từ khóa và điền vào `jobRecommendations` (kèm đúng `id` trong DB và `matchReason`).
+4. NẾU SEEKER TÌM TASKER:
+   - Dựa vào danh sách Tasker trong Database, chọn 1-3 người phù hợp và điền vào `taskerRecommendations`.
+
+ĐỊNH DẠNG TRẢ VỀ:
+Trả về JSON thuần duy nhất:
 {{
-  ""reply"": ""Lời phản hồi trò chuyện với người dùng, giải thích và hướng dẫn..."",
+  ""reply"": ""Nội dung trả lời và hướng dẫn người dùng bằng tiếng Việt..."",
   ""jobDraft"": null hoặc {{ ""title"": ""..."", ""category"": ""helper"", ""description"": ""..."", ""estimatedPrice"": 100000, ""isUrgent"": false }},
-  ""jobRecommendations"": [ {{ ""id"": ""Guid"", ""title"": ""..."", ""category"": ""..."", ""price"": 50000, ""locationText"": ""..."", ""matchReason"": ""..."" }} ],
-  ""taskerRecommendations"": [ {{ ""id"": ""Guid"", ""name"": ""..."", ""avatarUrl"": null, ""ratingAvg"": 4.9, ""skills"": [""helper""], ""bio"": ""..."", ""matchReason"": ""..."" }} ]
+  ""jobRecommendations"": [ {{ ""id"": ""UUID"", ""title"": ""..."", ""category"": ""..."", ""price"": 50000, ""locationText"": ""..."", ""matchReason"": ""..."" }} ],
+  ""taskerRecommendations"": [ {{ ""id"": ""UUID"", ""name"": ""..."", ""avatarUrl"": null, ""ratingAvg"": 4.9, ""skills"": [""helper""], ""bio"": ""..."", ""matchReason"": ""..."" }} ]
 }}";
 
-        var conversationPrompt = $@"{systemPrompt}
+        var rawResponse = await _gemini.GenerateTextAsync(prompt, temperature: 0.25, maxTokens: 2048, ct: ct);
+        var parsed = ExtractJson<AiChatResponse>(rawResponse);
 
-LỊCH SỬ CHAT VÀ TIN NHẮN MỚI CỦA USER:
-User: {request.Message}
-
-JSON:";
-
-        var rawResponse = await _gemini.GenerateTextAsync(conversationPrompt, temperature: 0.3, maxTokens: 2048, ct: ct);
-        var cleanJson = CleanJsonString(rawResponse);
-
-        try
+        if (parsed != null && !string.IsNullOrWhiteSpace(parsed.Reply))
         {
-            var parsed = JsonSerializer.Deserialize<AiChatResponse>(cleanJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            if (parsed != null && !string.IsNullOrWhiteSpace(parsed.Reply))
-            {
-                return parsed with { IsConfigured = true };
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to parse Gemini chat response JSON. Using raw text as reply.");
-            return new AiChatResponse(Reply: rawResponse, IsConfigured: true);
+            return parsed with { IsConfigured = true };
         }
 
-        return new AiChatResponse(Reply: rawResponse, IsConfigured: true);
+        // Nếu Gemini chỉ trả lời text thuần mà không ra JSON
+        if (!string.IsNullOrWhiteSpace(rawResponse))
+        {
+            // Tự động gắn draft nếu người dùng có ý định đăng việc
+            JobDraftDto? draft = isJobDraftIntent ? GenerateSmartLocalJobDraft(message) : null;
+            return new AiChatResponse(Reply: rawResponse, JobDraft: draft, IsConfigured: true);
+        }
+
+        return null;
     }
 
-    private AiChatResponse ChatWithLocalEngine(
-        AiChatRequest request,
-        string role,
+    private AiChatResponse ProcessWithSmartLocalEngine(
+        string message,
         bool isSeeker,
         bool isJobDraftIntent,
         bool isFindTaskerIntent,
         bool isFindJobsIntent,
+        bool isCheckMyJobsIntent,
         List<Job> userJobs,
         List<Job> openJobs,
         List<User> taskers)
     {
-        var msg = request.Message;
-        var lower = msg.ToLowerInvariant();
+        var lower = message.ToLowerInvariant();
 
-        // 1. Seeker wants to draft / post a job
+        // 1. Seeker muốn soạn và điền bài đăng việc
         if (isSeeker && isJobDraftIntent)
         {
-            var draft = GenerateLocalJobDraft(msg);
-            var reply = $"Tôi đã soạn sẵn bản thảo công việc **'{draft.Title}'** phù hợp với yêu cầu của bạn!\n\n" +
-                        $"• **Nhóm việc**: {draft.Category}\n" +
+            var draft = GenerateSmartLocalJobDraft(message);
+            var reply = $"Tôi đã soạn sẵn nội dung bài đăng việc **'{draft.Title}'** phù hợp với yêu cầu của bạn!\n\n" +
+                        $"• **Nhóm việc**: {GetCategoryName(draft.Category)}\n" +
                         $"• **Mức giá gợi ý**: {draft.EstimatedPrice:N0}đ\n" +
-                        $"• **Mô tả**: {draft.Description}\n\n" +
-                        $"Bạn có thể nhấn nút **'Áp dụng vào Đăng việc'** bên dưới để tự động điền toàn bộ thông tin vào form!";
+                        $"• **Mô tả công việc**: {draft.Description}\n\n" +
+                        $"👉 Bạn hãy bấm nút **'Áp dụng vào Đăng việc ngay'** bên dưới để tự động điền toàn bộ thông tin này vào form!";
 
             return new AiChatResponse(
                 Reply: reply,
@@ -268,7 +300,7 @@ JSON:";
                 IsConfigured: _gemini.IsConfigured);
         }
 
-        // 2. Seeker wants to find taskers
+        // 2. Seeker tìm Tasker phù hợp trong Database
         if (isSeeker && isFindTaskerIntent)
         {
             var matched = taskers
@@ -281,11 +313,11 @@ JSON:";
                     t.RatingAvg,
                     ParseSkills(t.Skills),
                     t.Bio,
-                    MatchReason: $"Đánh giá {t.RatingAvg:F1}★, phù hợp với các công việc hỗ trợ và việc vặt."))
+                    MatchReason: $"Đánh giá cao {t.RatingAvg:F1}★, kỹ năng phù hợp và có phản hồi nhanh."))
                 .ToList();
 
             var reply = matched.Count > 0
-                ? $"Dưới đây là các Tasker có uy tín và điểm đánh giá cao trong hệ thống phù hợp với yêu cầu của bạn:"
+                ? $"Dưới đây là các Tasker có uy tín và điểm đánh giá cao trong Database phù hợp với yêu cầu của bạn:"
                 : "Hiện tại chưa có Tasker phù hợp trong danh mục này. Bạn có thể đăng việc mới để các bạn sinh viên xung quanh nhận việc nhé!";
 
             return new AiChatResponse(
@@ -294,121 +326,219 @@ JSON:";
                 IsConfigured: _gemini.IsConfigured);
         }
 
-        // 3. Tasker looking for jobs
+        // 3. Seeker hỏi về việc đã đăng
+        if (isSeeker && isCheckMyJobsIntent)
+        {
+            if (userJobs.Count == 0)
+            {
+                return new AiChatResponse(
+                    Reply: "Bạn hiện chưa có công việc nào trong hệ thống. Hãy thử nhập yêu cầu như *'Code bài tập C#'* để tôi tạo bài đăng giúp bạn nhé!",
+                    IsConfigured: _gemini.IsConfigured);
+            }
+
+            var summary = string.Join("\n", userJobs.Select(j =>
+                $"• **{j.Title}** — Trạng thái: **{GetStatusName(j.Status)}** ({j.Price:N0}đ)"));
+
+            return new AiChatResponse(
+                Reply: $"Dưới đây là các công việc bạn đã đăng gần đây:\n\n{summary}\n\nBạn có thể vào tab **'Việc của tôi'** để xem chi tiết từng công việc.",
+                IsConfigured: _gemini.IsConfigured);
+        }
+
+        // 4. Tasker tìm việc từ Database qua từ khóa / ngôn ngữ tự nhiên
         if (!isSeeker && (isFindJobsIntent || openJobs.Count > 0))
         {
-            // Simple keyword filter
-            var keywords = lower.Split(' ', StringSplitOptions.RemoveEmptyEntries)
-                .Where(w => w.Length > 2 && !new[] { "tìm", "việc", "cho", "mình", "có", "nào", "không", "giúp" }.Contains(w))
+            var stopWords = new HashSet<string> { "tìm", "việc", "cho", "mình", "có", "nào", "không", "giúp", "với", "hỏi", "đang", "làm", "ở" };
+            var keywords = lower.Split(new[] { ' ', ',', '.', '?' }, StringSplitOptions.RemoveEmptyEntries)
+                .Where(w => w.Length >= 2 && !stopWords.Contains(w))
                 .ToList();
 
-            var matchedJobs = openJobs
-                .Where(j => keywords.Count == 0 || keywords.Any(k => j.Title.ToLowerInvariant().Contains(k) || j.Description.ToLowerInvariant().Contains(k) || j.Category.ToLowerInvariant().Contains(k)))
-                .Take(4)
+            var matched = openJobs
+                .Where(j =>
+                {
+                    if (keywords.Count == 0) return true;
+                    var text = $"{j.Title} {j.Description} {j.Category} {j.LocationText}".ToLowerInvariant();
+                    return keywords.Any(k => text.Contains(k));
+                })
+                .Take(5)
                 .Select(j => new JobRecommendationDto(
                     j.Id,
                     j.Title,
                     j.Category,
                     j.Price,
                     j.LocationText,
-                    MatchReason: "Phù hợp với từ khóa bạn tìm kiếm và đang mở nhận việc."))
+                    MatchReason: $"Phù hợp với từ khóa bạn tìm kiếm, thù lao {j.Price:N0}đ và đang mở nhận việc."))
                 .ToList();
 
-            if (matchedJobs.Count == 0 && openJobs.Count > 0)
+            if (matched.Count == 0 && openJobs.Count > 0)
             {
-                matchedJobs = openJobs.Take(3).Select(j => new JobRecommendationDto(
+                matched = openJobs.Take(3).Select(j => new JobRecommendationDto(
                     j.Id,
                     j.Title,
                     j.Category,
                     j.Price,
                     j.LocationText,
-                    MatchReason: "Công việc mới đăng đang tìm Tasker."))
-                .ToList();
+                    MatchReason: "Công việc mới nhất đang chờ Tasker nhận việc.")).ToList();
             }
 
-            var reply = matchedJobs.Count > 0
-                ? $"Tôi đã tìm thấy {matchedJobs.Count} công việc phù hợp với yêu cầu của bạn trong cơ sở dữ liệu:"
-                : "Hiện tại chưa có công việc mới nào phù hợp với từ khóa này. Bạn hãy quay lại sau hoặc thử từ khóa khác nhé!";
+            var reply = matched.Count > 0
+                ? $"Tôi đã quét Database và tìm thấy {matched.Count} công việc phù hợp với bạn:\n(Bấm 'Xem chi tiết & nhận việc' để ứng tuyển ngay!)"
+                : "Hiện tại chưa có công việc nào mở phù hợp với từ khóa này. Bạn hãy thử từ khóa khác nhé!";
 
             return new AiChatResponse(
                 Reply: reply,
-                JobRecommendations: matchedJobs,
+                JobRecommendations: matched,
                 IsConfigured: _gemini.IsConfigured);
         }
 
-        // 4. General conversational reply
-        var generalReply = isSeeker
+        // 5. Phản hồi chào hỏi chung
+        var defaultReply = isSeeker
             ? "Xin chào bạn! Tôi là GiGood AI. Tôi có thể giúp bạn:\n" +
-              "1. **Tự động viết và điền thông tin đăng việc** (ví dụ: 'Code bài tập C#', 'Dọn phòng trọ').\n" +
-              "2. **Tìm Tasker uy tín** phù hợp cho công việc của bạn.\n" +
+              "1. **Tự động viết và điền form đăng việc** (ví dụ: 'Code bài tập C#', 'Dọn phòng trọ').\n" +
+              "2. **Tìm Tasker uy tín** từ cơ sở dữ liệu hệ thống.\n" +
               "3. **Kiểm tra tiến độ** các công việc bạn đã đăng.\n\n" +
-              "Bạn muốn tôi hỗ trợ điều gì hôm nay?"
-            : "Xin chào bạn! Tôi là GiGood AI hỗ trợ Tasker. Tôi có thể giúp bạn:\n" +
-              "1. **Tìm việc thông minh bằng ngôn ngữ tự nhiên** (ví dụ: 'Tìm việc máy tính quanh quận 1', 'Việc giao hàng trên 50k').\n" +
-              "2. **Tư vấn nâng cao hồ sơ** để nhận được nhiều việc hơn.\n\n" +
-              "Bạn đang muốn tìm loại công việc nào?";
-
-        if (!_gemini.IsConfigured)
-        {
-            generalReply += "\n\n*(Lưu ý: Hệ thống hiện đang chạy ở chế độ Trợ lý Mẫu nội bộ. Sau khi thêm GEMINI_API_KEY, bạn sẽ được trải nghiệm AI Gemini đầy đủ!)*";
-        }
+              "Bạn muốn tôi hỗ trợ điều gì?"
+            : "Xin chào bạn! Tôi là GiGood AI dành cho Tasker. Tôi có thể giúp bạn:\n" +
+              "1. **Tìm việc thông minh từ Database** bằng từ khóa tự nhiên (ví dụ: 'Tìm việc máy tính', 'Việc giao hàng trên 50k').\n" +
+              "2. **Tư vấn hồ sơ** để tăng cơ hội nhận việc.\n\n" +
+              "Bạn muốn tìm loại công việc nào hôm nay?";
 
         return new AiChatResponse(
-            Reply: generalReply,
+            Reply: defaultReply,
             IsConfigured: _gemini.IsConfigured);
     }
 
-    private static JobDraftDto GenerateLocalJobDraft(string userPrompt)
+    // =========================================================================
+    // 3. TIỆN ÍCH SOẠN THẢO THÔNG MINH CHO MỌI CHỦ ĐỀ
+    // =========================================================================
+    private static JobDraftDto GenerateSmartLocalJobDraft(string userPrompt)
     {
         var lower = userPrompt.ToLowerInvariant();
 
-        if (lower.Contains("c#") || lower.Contains("code") || lower.Contains("lập trình") || lower.Contains("bài tập"))
+        // Chủ đề 1: Code bài tập C# / CNTT / Lập trình
+        if (lower.Contains("c#") || lower.Contains("code") || lower.Contains("lập trình") || lower.Contains("bài tập") || lower.Contains("oop") || lower.Contains("it"))
         {
             return new JobDraftDto(
-                Title: "Hỗ trợ giải & code bài tập C# OOP",
+                Title: "Hỗ trợ giải & code bài tập C# / .NET",
                 Category: "helper",
-                Description: "Cần bạn sinh viên am hiểu ngôn ngữ C# và lập trình hướng đối tượng (OOP) hỗ trợ giải thích logic và viết code bài tập lớn. Yêu cầu code sạch, có chú thích rõ ràng và chạy đúng yêu cầu đề bài.",
+                Description: "Cần bạn sinh viên hoặc lập trình viên am hiểu C# và lập trình hướng đối tượng (OOP) hỗ trợ giải bài tập lớn. Yêu cầu viết code sạch, chú thích logic rõ ràng, kiểm tra chạy không lỗi và giải thích cách hoạt động.",
                 EstimatedPrice: 100000,
                 IsUrgent: false);
         }
 
-        if (lower.Contains("dọn") || lower.Contains("vệ sinh") || lower.Contains("nhà") || lower.Contains("phòng trọ"))
+        // Chủ đề 2: Dọn dẹp phòng trọ / KTX
+        if (lower.Contains("dọn") || lower.Contains("vệ sinh") || lower.Contains("phòng trọ") || lower.Contains("nhà") || lower.Contains("rác"))
         {
             return new JobDraftDto(
                 Title: "Dọn dẹp phòng trọ cuối tuần",
                 Category: "cleaning",
-                Description: "Cần một bạn sinh viên hỗ trợ quét dọn phòng, lau sàn, rửa chén bát và gom rác sạch sẽ, thời gian hoàn thành khoảng 1.5 - 2 tiếng.",
+                Description: "Cần 1 bạn sinh viên phụ quét dọn phòng trọ, lau sàn, cọ rửa bồn rửa/toilet và gom rác sạch sẽ trước khi trả phòng. Thời gian làm khoảng 1.5 - 2 tiếng, đồ dùng vệ sinh có sẵn tại phòng.",
                 EstimatedPrice: 120000,
                 IsUrgent: false);
         }
 
-        if (lower.Contains("giao") || lower.Contains("ship") || lower.Contains("tài liệu") || lower.Contains("đồ án") || lower.Contains("cơm"))
+        // Chủ đề 3: Giao hàng / Giao tài liệu / Mua hộ
+        if (lower.Contains("giao") || lower.Contains("ship") || lower.Contains("tài liệu") || lower.Contains("đồ án") || lower.Contains("cơm") || lower.Contains("mua"))
         {
             return new JobDraftDto(
                 Title: "Giao tài liệu & đồ án sinh viên gấp",
                 Category: "delivery",
-                Description: "Cần bạn có xe máy giao nhanh túi tài liệu và đồ án từ trường về phòng trọ (~3km), giao cẩn thận tránh làm rách hoặc nhăn giấy tờ.",
+                Description: "Cần bạn có xe máy giao nhanh túi tài liệu và đồ án từ trường sang KTX / nhà trọ (~3km). Yêu cầu giao cẩn thận, không làm gập rách hay dính ướt giấy tờ.",
                 EstimatedPrice: 50000,
                 IsUrgent: true);
         }
 
-        if (lower.Contains("laptop") || lower.Contains("máy tính") || lower.Contains("sửa") || lower.Contains("win"))
+        // Chủ đề 4: Máy tính / Laptop / Cài Win / Phần mềm
+        if (lower.Contains("laptop") || lower.Contains("máy tính") || lower.Contains("win") || lower.Contains("office") || lower.Contains("quạt") || lower.Contains("sửa"))
         {
             return new JobDraftDto(
                 Title: "Vệ sinh laptop & cài phần mềm máy tính",
                 Category: "repair",
-                Description: "Máy tính chạy chậm và bị nóng quạt, cần bạn sinh viên IT hỗ trợ vệ sinh bụi quạt tản nhiệt, tra keo và cài đặt lại bộ ứng dụng học tập cơ bản.",
+                Description: "Laptop bị nóng quạt và chạy chậm, cần bạn sinh viên am hiểu kỹ thuật máy tính hỗ trợ thổi bụi tản nhiệt, tra keo tản nhiệt và cài đặt lại bộ ứng dụng văn phòng cơ bản.",
                 EstimatedPrice: 100000,
                 IsUrgent: false);
         }
 
-        var title = userPrompt.Length > 50 ? userPrompt[..50] + "..." : userPrompt;
+        // Chủ đề 5: Chuyển trọ / Bê đồ / Phụ việc shop
+        if (lower.Contains("chuyển") || lower.Contains("bê") || lower.Contains("vác") || lower.Contains("đồ") || lower.Contains("shop"))
+        {
+            return new JobDraftDto(
+                Title: "Phụ dọn & chuyển đồ phòng trọ",
+                Category: "helper",
+                Description: "Cần 1 bạn sinh viên phụ bê vác đồ đạc nhẹ (vali quần áo, sách vở, quạt máy) chuyển sang phòng trọ mới gần trường. Quãng đường chuyển ngắn, thời gian làm khoảng 1.5 tiếng.",
+                EstimatedPrice: 120000,
+                IsUrgent: false);
+        }
+
+        // Mặc định cho mọi yêu cầu khác
+        var cleanTitle = userPrompt.Length > 45 ? userPrompt[..45] + "..." : userPrompt;
         return new JobDraftDto(
-            Title: title,
+            Title: $"Nhờ hỗ trợ: {cleanTitle}",
             Category: "helper",
-            Description: $"Yêu cầu: {userPrompt}. Cần bạn sinh viên hỗ trợ hoàn thành đúng giờ, cẩn thận và nhiệt tình.",
-            EstimatedPrice: 90000,
+            Description: $"Yêu cầu công việc: {userPrompt}.\nCần bạn sinh viên nhận việc hỗ trợ hoàn thành cẩn thận, đúng giờ và nhiệt tình.",
+            EstimatedPrice: 80000,
             IsUrgent: false);
+    }
+
+    private static JobDraftDto NormalizeDraft(JobDraftDto draft)
+    {
+        var cat = draft.Category.Trim().ToLowerInvariant();
+        if (!JobCategories.All.Contains(cat))
+        {
+            cat = "helper";
+        }
+
+        var price = draft.EstimatedPrice <= 0 ? 100000 : draft.EstimatedPrice;
+        return draft with { Category = cat, EstimatedPrice = price };
+    }
+
+    private static T? ExtractJson<T>(string text) where T : class
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+
+        // 1. Thử parse trực tiếp
+        try
+        {
+            var cleaned = CleanMarkdown(text);
+            var res = JsonSerializer.Deserialize<T>(cleaned, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (res != null) return res;
+        }
+        catch { }
+
+        // 2. Tìm khối giữa { ... }
+        var start = text.IndexOf('{');
+        var end = text.LastIndexOf('}');
+        if (start >= 0 && end > start)
+        {
+            try
+            {
+                var sub = text.Substring(start, end - start + 1);
+                var res = JsonSerializer.Deserialize<T>(sub, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (res != null) return res;
+            }
+            catch { }
+        }
+
+        return null;
+    }
+
+    private static string CleanMarkdown(string text)
+    {
+        var s = text.Trim();
+        if (s.StartsWith("```json", StringComparison.OrdinalIgnoreCase))
+        {
+            s = s[7..];
+        }
+        else if (s.StartsWith("```"))
+        {
+            s = s[3..];
+        }
+
+        if (s.EndsWith("```"))
+        {
+            s = s[..^3];
+        }
+
+        return s.Trim();
     }
 
     private static List<string> ParseSkills(string? json)
@@ -424,23 +554,21 @@ JSON:";
         }
     }
 
-    private static string CleanJsonString(string text)
+    private static string GetCategoryName(string cat) => cat switch
     {
-        var cleaned = text.Trim();
-        if (cleaned.StartsWith("```json", StringComparison.OrdinalIgnoreCase))
-        {
-            cleaned = cleaned[7..];
-        }
-        else if (cleaned.StartsWith("```"))
-        {
-            cleaned = cleaned[3..];
-        }
+        "repair" => "Sửa chữa / Kỹ thuật",
+        "cleaning" => "Dọn dẹp",
+        "delivery" => "Giao hàng",
+        "helper" => "Hỗ trợ / Việc vặt",
+        _ => cat,
+    };
 
-        if (cleaned.EndsWith("```"))
-        {
-            cleaned = cleaned[..^3];
-        }
-
-        return cleaned.Trim();
-    }
+    private static string GetStatusName(JobStatus status) => status switch
+    {
+        JobStatus.Open => "Đang tìm người",
+        JobStatus.Assigned => "Đã có người nhận",
+        JobStatus.Done => "Đã hoàn thành",
+        JobStatus.Cancelled => "Đã hủy",
+        _ => status.ToString(),
+    };
 }
