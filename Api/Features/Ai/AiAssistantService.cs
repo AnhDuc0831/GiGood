@@ -63,8 +63,11 @@ public class AiAssistantService
         List<Job> openJobs = [];
         List<User> taskers = [];
 
+        User? currentUser = null;
         if (isSeeker)
         {
+            currentUser = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
+
             // Seeker: Đọc các công việc Seeker đã đăng trong hệ thống
             userJobs = await _db.Jobs.AsNoTracking()
                 .Where(j => j.OwnerId == userId)
@@ -72,11 +75,12 @@ public class AiAssistantService
                 .Take(5)
                 .ToListAsync(ct);
 
-            // Seeker: Đọc danh sách các Tasker có uy tín và kỹ năng từ bảng Users
+            // Seeker: Đọc danh sách các Tasker từ bảng Users (ưu tiên theo đánh giá và thời gian tạo)
             taskers = await _db.Users.AsNoTracking()
-                .Where(u => u.Skills != null || u.Bio != null || u.CurrentRole == "tasker")
+                .Where(u => u.CurrentRole == "tasker" || u.Skills != null || u.Bio != null)
                 .OrderByDescending(u => u.RatingAvg)
-                .Take(15)
+                .ThenByDescending(u => u.CreatedAt)
+                .Take(50)
                 .ToListAsync(ct);
         }
         else
@@ -110,12 +114,18 @@ public class AiAssistantService
             lower.Contains("thuê người"));
 
         var isFindTaskerIntent = isSeeker && !isJobDraftIntent && (
-            lower.Contains("tìm tasker") ||
-            lower.Contains("gợi ý tasker") ||
+            lower.Contains("tasker") ||
+            lower.Contains("tìm thợ") ||
+            lower.Contains("gợi ý thợ") ||
+            lower.Contains("thợ gần") ||
+            lower.Contains("tìm người làm") ||
+            lower.Contains("người làm gần") ||
             lower.Contains("ai làm được") ||
             lower.Contains("ai nhận việc") ||
             lower.Contains("thợ giỏi") ||
-            lower.Contains("người nhận việc"));
+            lower.Contains("người nhận việc") ||
+            lower.Contains("gần đây") ||
+            lower.Contains("quanh đây"));
 
         var isCheckMyJobsIntent = isSeeker && !isJobDraftIntent && !isFindTaskerIntent && (
             lower.Contains("việc của tôi") ||
@@ -171,7 +181,7 @@ public class AiAssistantService
         // BỘ PHÂN TÍCH NỘI BỘ (LOCAL SMART ENGINE) - ĐẢM BẢO ỔN ĐỊNH 100%
         return ProcessWithSmartLocalEngine(
             message, isSeeker, isJobDraftIntent, isFindTaskerIntent, isFindJobsIntent, isCheckMyJobsIntent,
-            userJobs, openJobs, taskers);
+            userJobs, openJobs, taskers, currentUser);
     }
 
     private async Task<AiChatResponse?> DraftJobWithGeminiAsync(string userPrompt, CancellationToken ct)
@@ -295,13 +305,16 @@ QUY TẮC PHẢN HỒI (RẤT QUAN TRỌNG):
      + locationText: Nếu trong yêu cầu có địa chỉ/địa điểm (ví dụ '289, Nguyễn Hồng Ánh, Hoà Xuân'...), hãy trích xuất và bổ sung quận/huyện, thành phố còn thiếu (ví dụ '289 Nguyễn Hồng Ánh, Hoà Xuân, Đà Nẵng')
 3. NẾU TASKER TÌM VIỆC THEO TỪ KHÓA / NGÔN NGỮ TỰ NHIÊN:
    - Dựa vào danh sách công việc ĐANG MỞ trong Database ở trên, chọn ra các công việc phù hợp với từ khóa và điền vào `jobRecommendations` (kèm đúng `id` trong DB và `matchReason`).
-4. NẾU SEEKER TÌM TASKER (RẤT QUAN TRỌNG VỀ ĐỊA PHƯƠNG/THÀNH PHỐ):
+4. NẾU SEEKER TÌM TASKER (RẤT QUAN TRỌNG VỀ ĐỊA PHƯƠNG / TỈNH THÀNH PHỐ):
    - ĐẶC BIỆT CHÚ Ý VỊ TRÍ ĐỊA LÝ (Location):
-     + Hãy xác định thành phố/quận huyện mà Seeker đang nhắc tới (ví dụ: 'Hoà Xuân', 'Cẩm Lệ', 'Đà Nẵng', 'Quận 1'...).
-     + BẮT BUỘC CHỈ GỢI Ý các Tasker có khu vực hoạt động (Location) hoặc nơi ở (Bio) nằm trong CÙNG thành phố/quận huyện đó!
-     + TUYỆT ĐỐI KHÔNG ĐƯỢC gợi ý Tasker ở tỉnh/thành phố khác xa xôi (Ví dụ: Seeker ở Đà Nẵng thì TUYỆT ĐỐI KHÔNG gợi ý Tasker ở Bình Thạnh, TP.HCM hay Hà Nội)!
-     + Nếu trong danh sách Tasker ở trên KHÔNG CÓ ai ở khu vực của Seeker: Trả về `taskerRecommendations: []` (danh sách rỗng). Trong `reply`, giải thích rõ: 'Hiện tại hệ thống chưa có Tasker nào đăng ký hoạt động tại khu vực [tên khu vực] (các Tasker hiện có đang ở tỉnh/thành phố khác). Bạn có thể đăng một bài việc mới để các bạn sinh viên xung quanh nhận việc nhé!'
-     + Nếu tìm được Tasker cùng khu vực, điền vào `taskerRecommendations` (tối đa 3 người) kèm `jobId` nếu Seeker có công việc phù hợp.
+     + Hãy xác định tỉnh/thành phố hoặc khu vực mà Seeker đang nhắc tới (ví dụ: 'Đà Nẵng', 'Hoà Xuân', 'Cẩm Lệ', 'Ngũ Hành Sơn', 'Hải Châu', 'TP.HCM', 'Hà Nội'...).
+     + NGUYÊN TẮC KẾT NỐI ĐỊA PHƯƠNG THEO THÀNH PHỐ:
+       * Trong cùng một tỉnh/thành phố (Ví dụ: Cùng ở ĐÀ NẴNG): Các quận huyện/phường như Hoà Xuân, Cẩm Lệ, Ngũ Hành Sơn, Hải Châu, Sơn Trà, Thanh Khê, Liên Chiểu... nằm liền kề nhau và khoảng cách chỉ từ 2km - 8km. Các Tasker di chuyển bằng xe máy nên nhận việc và di chuyển rất thuận tiện giữa các quận lân cận trong Đà Nẵng.
+       * VÌ THẾ: BẤT KỲ TASKER NÀO CÓ ĐỊA CHỈ TẠI ĐÀ NẴNG (như Ngũ Hành Sơn, Cẩm Lệ, Hải Châu...) ĐỀU ĐỦ ĐIỀU KIỆN VÀ BẮT BUỘC ĐƯỢC GỢI Ý CHO SEEKER Ở ĐÀ NẴNG / HOÀ XUÂN!
+       * Nếu Seeker ở Hoà Xuân mà Tasker ở Ngũ Hành Sơn: Đây là 2 quận giáp ranh nhau tại Đà Nẵng, BẮT BUỘC GỢI Ý Tasker này và nêu rõ trong `matchReason` là 'Hoạt động tại Ngũ Hành Sơn, Đà Nẵng, giáp ranh Hoà Xuân (~3-5km), sẵn sàng nhận việc nhanh chóng'.
+       * CHỈ TỪ CHỐI khi Tasker ở TỈNH/THÀNH PHỐ HOÀN TOÀN KHÁC BIỆT (Ví dụ: Seeker ở Đà Nẵng nhưng Tasker ở TP.HCM hoặc Hà Nội cách hàng trăm km thì TUYỆT ĐỐI CẤM gợi ý).
+     + Nếu trong danh sách Tasker ở trên THỰC SỰ KHÔNG CÓ ai trong cùng tỉnh/thành phố với Seeker: Trả về `taskerRecommendations: []` (danh sách rỗng). Trong `reply`, giải thích rõ: 'Hiện tại hệ thống chưa có Tasker nào đăng ký hoạt động tại khu vực [tên tỉnh/thành phố] (các Tasker hiện có đang ở tỉnh/thành phố khác). Bạn có thể đăng một bài việc mới để các bạn sinh viên xung quanh nhận việc nhé!'
+     + Nếu tìm được Tasker cùng thành phố: Điền vào `taskerRecommendations` (tối đa 4 người), ưu tiên người có kỹ năng phù hợp hoặc đánh giá cao lên trước, kèm `jobId` nếu Seeker có công việc phù hợp.
 
 ĐỊNH DẠNG TRẢ VỀ:
 Trả về JSON thuần duy nhất:
@@ -340,7 +353,8 @@ Trả về JSON thuần duy nhất:
         bool isCheckMyJobsIntent,
         List<Job> userJobs,
         List<Job> openJobs,
-        List<User> taskers)
+        List<User> taskers,
+        User? currentUser = null)
     {
         var lower = message.ToLowerInvariant();
 
@@ -370,18 +384,24 @@ Trả về JSON thuần duy nhất:
             bool isDaNang = promptLower.Contains("đà nẵng") || promptLower.Contains("da nang") ||
                             promptLower.Contains("hoà xuân") || promptLower.Contains("hòa xuân") ||
                             promptLower.Contains("cẩm lệ") || promptLower.Contains("hải châu") ||
+                            promptLower.Contains("ngũ hành sơn") || promptLower.Contains("sơn trà") ||
+                            promptLower.Contains("thanh khê") || promptLower.Contains("liên chiểu") ||
                             promptLower.Contains("nguyễn hồng ánh") ||
                             (relevantJob?.LocationText?.ToLowerInvariant().Contains("đà nẵng") == true) ||
-                            (relevantJob?.LocationText?.ToLowerInvariant().Contains("hoà xuân") == true);
+                            (relevantJob?.LocationText?.ToLowerInvariant().Contains("hoà xuân") == true) ||
+                            (currentUser?.Location?.ToLowerInvariant().Contains("đà nẵng") == true);
 
             bool isHcm = promptLower.Contains("hcm") || promptLower.Contains("hồ chí minh") ||
                          promptLower.Contains("sài gòn") || promptLower.Contains("bình thạnh") ||
                          promptLower.Contains("quận 1") || promptLower.Contains("thủ đức") ||
-                         (relevantJob?.LocationText?.ToLowerInvariant().Contains("tp.hcm") == true);
+                         (relevantJob?.LocationText?.ToLowerInvariant().Contains("tp.hcm") == true) ||
+                         (currentUser?.Location?.ToLowerInvariant().Contains("hồ chí minh") == true) ||
+                         (currentUser?.Location?.ToLowerInvariant().Contains("tp.hcm") == true);
 
             bool isHaNoi = promptLower.Contains("hà nội") || promptLower.Contains("ha noi") ||
                            promptLower.Contains("cầu giấy") || promptLower.Contains("đống đa") ||
-                           (relevantJob?.LocationText?.ToLowerInvariant().Contains("hà nội") == true);
+                           (relevantJob?.LocationText?.ToLowerInvariant().Contains("hà nội") == true) ||
+                           (currentUser?.Location?.ToLowerInvariant().Contains("hà nội") == true);
 
             IEnumerable<User> candidateTaskers = taskers;
 
@@ -389,25 +409,53 @@ Trả về JSON thuần duy nhất:
             if (isDaNang)
             {
                 candidateTaskers = candidateTaskers.Where(t =>
-                    (!string.IsNullOrEmpty(t.Location) && (t.Location.ToLowerInvariant().Contains("đà nẵng") || t.Location.ToLowerInvariant().Contains("cẩm lệ") || t.Location.ToLowerInvariant().Contains("hoà xuân") || t.Location.ToLowerInvariant().Contains("hòa xuân"))) ||
-                    (!string.IsNullOrEmpty(t.Bio) && (t.Bio.ToLowerInvariant().Contains("đà nẵng") || t.Bio.ToLowerInvariant().Contains("bách khoa đn"))));
+                    (!string.IsNullOrEmpty(t.Location) && (
+                        t.Location.ToLowerInvariant().Contains("đà nẵng") ||
+                        t.Location.ToLowerInvariant().Contains("da nang") ||
+                        t.Location.ToLowerInvariant().Contains("ngũ hành sơn") ||
+                        t.Location.ToLowerInvariant().Contains("cẩm lệ") ||
+                        t.Location.ToLowerInvariant().Contains("hoà xuân") ||
+                        t.Location.ToLowerInvariant().Contains("hòa xuân") ||
+                        t.Location.ToLowerInvariant().Contains("hải châu") ||
+                        t.Location.ToLowerInvariant().Contains("sơn trà") ||
+                        t.Location.ToLowerInvariant().Contains("thanh khê") ||
+                        t.Location.ToLowerInvariant().Contains("liên chiểu")
+                    )) ||
+                    (!string.IsNullOrEmpty(t.Bio) && (
+                        t.Bio.ToLowerInvariant().Contains("đà nẵng") ||
+                        t.Bio.ToLowerInvariant().Contains("da nang") ||
+                        t.Bio.ToLowerInvariant().Contains("bách khoa đn") ||
+                        t.Bio.ToLowerInvariant().Contains("kinh tế đn")
+                    )));
             }
             else if (isHcm)
             {
                 candidateTaskers = candidateTaskers.Where(t =>
-                    (!string.IsNullOrEmpty(t.Location) && (t.Location.ToLowerInvariant().Contains("tp.hcm") || t.Location.ToLowerInvariant().Contains("hồ chí minh") || t.Location.ToLowerInvariant().Contains("bình thạnh") || t.Location.ToLowerInvariant().Contains("quận 1"))) ||
+                    (!string.IsNullOrEmpty(t.Location) && (
+                        t.Location.ToLowerInvariant().Contains("tp.hcm") ||
+                        t.Location.ToLowerInvariant().Contains("hồ chí minh") ||
+                        t.Location.ToLowerInvariant().Contains("bình thạnh") ||
+                        t.Location.ToLowerInvariant().Contains("quận 1") ||
+                        t.Location.ToLowerInvariant().Contains("thủ đức")
+                    )) ||
                     (!string.IsNullOrEmpty(t.Bio) && t.Bio.ToLowerInvariant().Contains("tp.hcm")));
             }
             else if (isHaNoi)
             {
                 candidateTaskers = candidateTaskers.Where(t =>
-                    (!string.IsNullOrEmpty(t.Location) && (t.Location.ToLowerInvariant().Contains("hà nội") || t.Location.ToLowerInvariant().Contains("ha noi"))) ||
+                    (!string.IsNullOrEmpty(t.Location) && (
+                        t.Location.ToLowerInvariant().Contains("hà nội") ||
+                        t.Location.ToLowerInvariant().Contains("ha noi") ||
+                        t.Location.ToLowerInvariant().Contains("cầu giấy") ||
+                        t.Location.ToLowerInvariant().Contains("đống đa")
+                    )) ||
                     (!string.IsNullOrEmpty(t.Bio) && t.Bio.ToLowerInvariant().Contains("hà nội")));
             }
 
             var matched = candidateTaskers
-                .OrderByDescending(t => t.RatingAvg)
-                .Take(3)
+                .OrderByDescending(t => t.RatingAvg > 0 ? t.RatingAvg : 4.5)
+                .ThenByDescending(t => t.CreatedAt)
+                .Take(4)
                 .Select(t => new TaskerRecommendationDto(
                     t.Id,
                     t.Name,
@@ -416,21 +464,23 @@ Trả về JSON thuần duy nhất:
                     ParseSkills(t.Skills),
                     t.Bio,
                     MatchReason: !string.IsNullOrEmpty(t.Location)
-                        ? $"Hoạt động tại {t.Location}, đánh giá {t.RatingAvg:F1}★ uy tín và phản hồi nhanh."
-                        : $"Đánh giá cao {t.RatingAvg:F1}★, kỹ năng phù hợp và có phản hồi nhanh.",
+                        ? (isDaNang && t.Location.ToLowerInvariant().Contains("ngũ hành sơn") && (promptLower.Contains("hoà xuân") || promptLower.Contains("cẩm lệ") || promptLower.Contains("nguyễn hồng ánh"))
+                            ? $"Hoạt động tại {t.Location}, giáp ranh Hoà Xuân (~3-5km), sẵn sàng nhận việc nhanh chóng."
+                            : $"Hoạt động tại {t.Location}, đánh giá {(t.RatingAvg > 0 ? $"{t.RatingAvg:F1}★" : "uy tín")}, sẵn sàng di chuyển nhận việc.")
+                        : $"Đánh giá {(t.RatingAvg > 0 ? $"{t.RatingAvg:F1}★" : "uy tín")}, kỹ năng phù hợp và có phản hồi nhanh.",
                     JobId: relevantJob?.Id))
                 .ToList();
 
             string reply;
             if (matched.Count > 0)
             {
-                var areaName = isDaNang ? "khu vực Đà Nẵng / Cẩm Lệ / Hoà Xuân" : isHcm ? "khu vực TP.HCM" : "khu vực của bạn";
-                reply = $"Dưới đây là các Tasker uy tín và hoạt động gần {areaName} phù hợp với yêu cầu của bạn:";
+                var areaName = isDaNang ? "khu vực Đà Nẵng (gần Hoà Xuân / Cẩm Lệ / Ngũ Hành Sơn)" : isHcm ? "khu vực TP.HCM" : "khu vực của bạn";
+                reply = $"Dưới đây là các Tasker uy tín tại {areaName} phù hợp với yêu cầu của bạn:\n(Bấm 'Trò chuyện' để kết nối trao đổi trực tiếp với Tasker)";
             }
             else
             {
-                var areaName = isDaNang ? "Hoà Xuân, Cẩm Lệ, Đà Nẵng" : isHcm ? "TP.HCM" : "khu vực bạn yêu cầu";
-                reply = $"Hiện tại trên hệ thống GiGood chưa có Tasker nào đăng ký hoạt động tại khu vực **{areaName}** (các Tasker hiện có đang ở khu vực quá xa như TP.HCM). Bạn hãy đăng một bài việc mới lên hệ thống để các bạn sinh viên xung quanh nhận việc nhé!";
+                var areaName = isDaNang ? "Đà Nẵng" : isHcm ? "TP.HCM" : "khu vực bạn yêu cầu";
+                reply = $"Hiện tại trên hệ thống GiGood chưa có Tasker nào đăng ký hoạt động tại khu vực **{areaName}** (các Tasker hiện có đang ở tỉnh/thành phố khác). Bạn hãy đăng một bài việc mới lên hệ thống để các bạn sinh viên xung quanh nhận việc nhé!";
             }
 
             return new AiChatResponse(

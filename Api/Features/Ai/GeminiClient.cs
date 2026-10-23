@@ -38,6 +38,7 @@ HỆ THỐNG DATABASE GIGOOD (PostgreSQL / Neon DB):
    - Name (VARCHAR): Họ và tên
    - Phone (VARCHAR): Số điện thoại
    - CurrentRole (VARCHAR): Vai trò ('seeker' hoặc 'tasker')
+   - Location (TEXT): Địa chỉ, khu vực sinh sống và hoạt động của người dùng (ví dụ: '42, Nguyên Duy Cung, Đà Nẵng, Ngũ Hành Sơn')
    - RatingAvg (DOUBLE): Điểm đánh giá trung bình từ 1.0 đến 5.0 sao
    - Skills (JSONB Array): Danh sách kỹ năng của Tasker (ví dụ: ['repair', 'helper'])
    - Bio (TEXT): Lời giới thiệu kinh nghiệm bản thân
