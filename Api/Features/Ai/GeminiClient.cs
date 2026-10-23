@@ -61,10 +61,13 @@ HỆ THỐNG DATABASE GIGOOD (PostgreSQL / Neon DB):
         _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(25) };
         _logger = logger;
         _apiKey = configuration["Gemini:ApiKey"]
+            ?? configuration["GEMINI_API_KEY"]
             ?? Environment.GetEnvironmentVariable("GEMINI_API_KEY")
+            ?? Environment.GetEnvironmentVariable("Gemini__ApiKey")
             ?? "";
 
         _configuredModel = configuration["Gemini:Model"]
+            ?? configuration["GEMINI_MODEL"]
             ?? Environment.GetEnvironmentVariable("GEMINI_MODEL")
             ?? "gemini-2.5-flash";
     }

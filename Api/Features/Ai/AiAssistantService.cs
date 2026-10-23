@@ -32,33 +32,10 @@ public class AiAssistantService
         {
             try
             {
-                var prompt = $@"
-Bạn là trợ lý đăng việc thông minh cho ứng dụng GiGood (nền tảng kết nối micro-gig / việc làm vặt tại Việt Nam).
-Người dùng nhập yêu cầu: ""{userPrompt}""
-
-NHIỆM VỤ:
-Tạo bản thảo công việc đầy đủ, rõ ràng và hấp dẫn.
-Danh mục (category) BẮT BUỘC chọn đúng 1 trong 4 loại sau:
-- 'repair': Kỹ thuật máy tính, vệ sinh laptop, cài Win/phần mềm, sửa chữa điện tử vặt
-- 'cleaning': Dọn dẹp phòng trọ, vệ sinh nhà cửa, lau dọn KTX
-- 'delivery': Giao hàng, giao tài liệu/đồ án, mua hộ đồ ăn
-- 'helper': Hỗ trợ code bài tập C#/CNTT, gia sư, phụ quán/shop, dọn chuyển đồ phòng trọ
-
-YÊU CẦU OUTPUT:
-Trả về duy nhất JSON thuần (KHÔNG có văn bản nào ngoài JSON, không markdown):
-{{
-  ""title"": ""Tiêu đề ngắn gọn, rõ ràng (30-60 ký tự)"",
-  ""category"": ""repair|cleaning|delivery|helper"",
-  ""description"": ""Mô tả công việc chi tiết: phạm vi công việc, kỹ năng cần có, thời gian và địa điểm thực hiện..."",
-  ""estimatedPrice"": 100000,
-  ""isUrgent"": false
-}}";
-
-                var rawResponse = await _gemini.GenerateTextAsync(prompt, temperature: 0.2, maxTokens: 1024, ct: ct);
-                var draft = ExtractJson<JobDraftDto>(rawResponse);
-                if (draft != null && !string.IsNullOrWhiteSpace(draft.Title) && !string.IsNullOrWhiteSpace(draft.Category))
+                var geminiDraft = await DraftJobWithGeminiAsync(userPrompt, ct);
+                if (geminiDraft?.JobDraft != null)
                 {
-                    return NormalizeDraft(draft);
+                    return geminiDraft.JobDraft;
                 }
             }
             catch (Exception ex)
@@ -166,6 +143,16 @@ Trả về duy nhất JSON thuần (KHÔNG có văn bản nào ngoài JSON, khô
         {
             try
             {
+                // Nếu Seeker có ý định đăng hoặc tạo việc -> để Gemini trực tiếp phân tích và sinh bài đăng!
+                if (isSeeker && isJobDraftIntent)
+                {
+                    var geminiDraft = await DraftJobWithGeminiAsync(message, ct);
+                    if (geminiDraft != null)
+                    {
+                        return geminiDraft;
+                    }
+                }
+
                 var geminiResponse = await ProcessWithGeminiAsync(
                     message, isSeeker, isJobDraftIntent, isFindTaskerIntent, isFindJobsIntent, isCheckMyJobsIntent,
                     userJobs, openJobs, taskers, ct);
@@ -186,6 +173,68 @@ Trả về duy nhất JSON thuần (KHÔNG có văn bản nào ngoài JSON, khô
             message, isSeeker, isJobDraftIntent, isFindTaskerIntent, isFindJobsIntent, isCheckMyJobsIntent,
             userJobs, openJobs, taskers);
     }
+
+    private async Task<AiChatResponse?> DraftJobWithGeminiAsync(string userPrompt, CancellationToken ct)
+    {
+        var prompt = $@"
+Bạn là Trợ lý AI GiGood chuyên hỗ trợ Seeker phân tích và tạo bài đăng việc vi mô (micro-gig).
+Người dùng yêu cầu: ""{userPrompt}""
+
+NHIỆM VỤ CỦA BẠN (RẤT QUAN TRỌNG):
+1. Đọc và phân tích kỹ yêu cầu của người dùng để xác định đúng ngôn ngữ lập trình, môn học, kỹ năng hoặc nội dung công việc (ví dụ: người dùng nói 'Java' thì tiêu đề và mô tả PHẢI là Java, nói 'Python' thì PHẢI là Python, nói 'C#' thì mới là C#). Tuyệt đối không nhầm lẫn ngôn ngữ!
+2. Sinh một bài đăng việc hoàn chỉnh, tự nhiên và thực tế:
+   - title: Tiêu đề rõ ràng, nêu bật ngôn ngữ/nội dung (30-60 ký tự)
+   - category: 'repair', 'cleaning', 'delivery', hoặc 'helper' (việc lập trình/code/gia sư chọn 'helper')
+   - description: Viết thật chi tiết, nêu rõ nội dung bài tập/công việc, yêu cầu kiến thức (ví dụ OOP, clean code), giải thích logic và hướng dẫn chạy chương trình
+   - estimatedPrice: Mức giá thù lao gợi ý phù hợp (số nguyên VNĐ, ví dụ 100000)
+   - isUrgent: boolean (true nếu việc cần gấp)
+   - reply: Lời giải thích ngắn gọn, thân thiện bằng tiếng Việt gửi tới người dùng.
+
+YÊU CẦU OUTPUT:
+Trả về duy nhất JSON thuần (KHÔNG dùng markdown ```json, KHÔNG có văn bản nào ngoài JSON):
+{{
+  ""reply"": ""Tôi đã phân tích yêu cầu của bạn và tạo bản thảo bài đăng tuyển người hỗ trợ..."",
+  ""title"": ""..."",
+  ""category"": ""helper"",
+  ""description"": ""..."",
+  ""estimatedPrice"": 100000,
+  ""isUrgent"": false
+}}";
+
+        var raw = await _gemini.GenerateTextAsync(prompt, temperature: 0.2, maxTokens: 1024, ct: ct);
+        var res = ExtractJson<GeminiDraftRaw>(raw);
+        if (res != null && !string.IsNullOrWhiteSpace(res.Title))
+        {
+            var cat = res.Category?.ToLowerInvariant().Trim() ?? "helper";
+            if (!JobCategories.All.Contains(cat)) cat = "helper";
+
+            var draft = new JobDraftDto(
+                Title: res.Title,
+                Category: cat,
+                Description: res.Description ?? userPrompt,
+                EstimatedPrice: res.EstimatedPrice > 0 ? res.EstimatedPrice : 100000,
+                IsUrgent: res.IsUrgent);
+
+            var reply = !string.IsNullOrWhiteSpace(res.Reply)
+                ? res.Reply
+                : $"Tôi đã phân tích yêu cầu của bạn bằng Gemini AI và tạo bản thảo bài đăng **'{draft.Title}'**! Bạn hãy bấm 'Áp dụng vào Đăng việc ngay' bên dưới để điền form nhé.";
+
+            return new AiChatResponse(
+                Reply: reply,
+                JobDraft: draft,
+                IsConfigured: true);
+        }
+
+        return null;
+    }
+
+    private sealed record GeminiDraftRaw(
+        string? Reply,
+        string? Title,
+        string? Category,
+        string? Description,
+        decimal EstimatedPrice,
+        bool IsUrgent);
 
     private async Task<AiChatResponse?> ProcessWithGeminiAsync(
         string message,
