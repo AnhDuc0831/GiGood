@@ -54,7 +54,7 @@ HỆ THỐNG DATABASE GIGOOD (PostgreSQL / Neon DB):
 ";
 
     // Danh sách các model của Google Gemini để tự động chuyển tiếp nếu model chính chưa khả dụng
-    private static readonly string[] CandidateModels = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.0-flash"];
+    private static readonly string[] CandidateModels = ["gemini-3.5-flash-lite", "gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.0-flash"];
 
     public GeminiClient(IConfiguration configuration, ILogger<GeminiClient> logger)
     {
@@ -69,7 +69,7 @@ HỆ THỐNG DATABASE GIGOOD (PostgreSQL / Neon DB):
         _configuredModel = configuration["Gemini:Model"]
             ?? configuration["GEMINI_MODEL"]
             ?? Environment.GetEnvironmentVariable("GEMINI_MODEL")
-            ?? "gemini-2.5-flash";
+            ?? "gemini-3.5-flash-lite";
     }
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(_apiKey) && _apiKey != "API_KEY" && !_apiKey.StartsWith("YOUR_");
