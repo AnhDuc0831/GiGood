@@ -29,11 +29,43 @@ import { geocodeAddress, reverseGeocodeCoords } from '../../../lib/features/jobs
 import { getApiErrorMessage } from '../../../lib/features/jobs/api'
 import { colors } from '../../../constants/theme'
 
-const TEMPLATES = [
-  { cat: 'repair' as Category, title: 'Sửa vòi nước bị rò rỉ', budget: 150000 },
-  { cat: 'cleaning' as Category, title: 'Dọn dẹp nhà 2 phòng ngủ', budget: 200000 },
-  { cat: 'delivery' as Category, title: 'Giao đồ gấp trong khu vực', budget: 50000 },
-  { cat: 'helper' as Category, title: 'Cần người bê vác đồ đạc', budget: 120000 },
+const TEMPLATES: { cat: Category; title: string; budget: number; desc: string }[] = [
+  {
+    cat: 'delivery',
+    title: 'Giao tài liệu & đồ án gấp',
+    budget: 50000,
+    desc: 'Cần bạn giao nhanh tập tài liệu và bản vẽ đồ án từ trường về phòng trọ (~3km), giao cẩn thận tránh làm rách hoặc nhăn giấy tờ.',
+  },
+  {
+    cat: 'helper',
+    title: 'Phụ chuyển đồ phòng trọ',
+    budget: 120000,
+    desc: 'Cần 1 bạn sinh viên phụ bê vác đồ đạc nhẹ (vali quần áo, sách vở, quạt máy) sang phòng trọ mới gần trường.',
+  },
+  {
+    cat: 'cleaning',
+    title: 'Dọn dẹp phòng trọ / KTX',
+    budget: 120000,
+    desc: 'Cần bạn sinh viên phụ quét dọn phòng trọ, lau sàn, rửa bát và gom rác sạch sẽ, thời gian khoảng 1.5 - 2 tiếng.',
+  },
+  {
+    cat: 'repair',
+    title: 'Vệ sinh laptop & cài Win/Office',
+    budget: 100000,
+    desc: 'Cần bạn am hiểu máy tính hỗ trợ vệ sinh quạt tản nhiệt laptop, tra keo và cài đặt lại bộ phần mềm học tập cơ bản.',
+  },
+  {
+    cat: 'helper',
+    title: 'Đóng gói hàng & dán tem shop',
+    budget: 90000,
+    desc: 'Cần bạn sinh viên phụ phân loại hàng hóa, dán tem mã vận đơn và đóng gói đơn hàng Shopee tại shop trong ca 2-3 tiếng.',
+  },
+  {
+    cat: 'delivery',
+    title: 'Mua hộ & giao đồ ăn trưa',
+    budget: 40000,
+    desc: 'Nhờ một bạn tiện đường mua hộ 2 phần cơm trưa và trà sữa đem lên phòng KTX/phòng trọ giúp mình.',
+  },
 ]
 
 const MAX_IMAGES = 5
@@ -100,10 +132,13 @@ export default function PostScreen() {
     }
   }
 
-  const applyTemplate = (cat: Category, t: string, b: number) => {
+  const applyTemplate = (cat: Category, t: string, b: number, desc?: string) => {
     setCategory(cat)
     setTitle(t)
     setBudget(String(b))
+    if (desc) {
+      setDescription(desc)
+    }
   }
 
   const pickImage = async () => {
@@ -210,14 +245,14 @@ export default function PostScreen() {
       </View>
 
       <View className="space-y-2 mb-4">
-        <Text className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">Mẫu việc nhanh</Text>
+        <Text className="text-[11px] font-bold text-gray-400 uppercase tracking-wide">Mẫu việc nhanh cho học sinh, sinh viên</Text>
         <View className="flex-row flex-wrap">
-          {TEMPLATES.map(t => (
-            <TouchableOpacity key={t.cat} onPress={() => applyTemplate(t.cat, t.title, t.budget)}
+          {TEMPLATES.map((t, idx) => (
+            <TouchableOpacity key={idx} onPress={() => applyTemplate(t.cat, t.title, t.budget, t.desc)}
               className="p-3 rounded-xl border border-gray-200 bg-white active:border-orange-500 mb-2.5 mr-2.5"
               style={{ width: '47%' }}>
               <FontAwesome name={(CATEGORY_META[t.cat]?.icon || 'wrench') as keyof typeof FontAwesome.glyphMap} size={14} color={colors.orange} style={{ marginBottom: 6 }} />
-              <Text className="text-[11px] font-bold text-gray-700 leading-tight">{t.title}</Text>
+              <Text className="text-[11px] font-bold text-gray-700 leading-tight" numberOfLines={2}>{t.title}</Text>
               <Text className="text-[11px] font-bold text-teal-600 mt-1">{t.budget.toLocaleString('vi-VN')}đ</Text>
             </TouchableOpacity>
           ))}
@@ -227,7 +262,7 @@ export default function PostScreen() {
       <View className="space-y-4">
         <View className="space-y-1.5">
           <Text className="text-xs font-bold text-gray-700">Tên công việc <Text className="text-red-500">*</Text></Text>
-          <VTextInput value={title} onChangeText={setTitle} placeholder="Ví dụ: Tìm thợ thông đường ống nước bồn rửa"
+          <VTextInput value={title} onChangeText={setTitle} placeholder="Ví dụ: Giao tài liệu gấp, phụ dọn phòng trọ..."
             placeholderTextColor={colors.grayMuted} className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm" />
         </View>
 
@@ -246,7 +281,7 @@ export default function PostScreen() {
 
         <View className="space-y-1.5">
           <Text className="text-xs font-bold text-gray-700">Mô tả công việc chi tiết <Text className="text-red-500">*</Text></Text>
-          <VTextInput value={description} onChangeText={setDescription} placeholder="Ghi rõ yêu cầu để Tasker chuẩn bị dụng cụ phù hợp..."
+          <VTextInput value={description} onChangeText={setDescription} placeholder="Ghi rõ yêu cầu, thời gian, địa điểm để các bạn nhận việc dễ nắm bắt..."
             placeholderTextColor={colors.grayMuted} multiline numberOfLines={3}
             className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm" style={{ minHeight: 80, textAlignVertical: 'top' }} />
         </View>
